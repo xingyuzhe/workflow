@@ -1,0 +1,4 @@
+# 临时文件
+*.swp
+*.bak.*
+.DS_Store
