@@ -19,7 +19,7 @@ Start a new change using the experimental artifact-driven approach.
 
 1. **If no clear input provided, ask what they want to build**
 
-   Use the **AskUserQuestion tool** (open-ended, no preset options) to ask:
+   向用户提问确认 (open-ended, no preset options):
    > "What change do you want to work on? Describe what you want to build or fix."
 
    From their description, derive a kebab-case name (e.g., "add user authentication" → `add-user-auth`).
@@ -76,6 +76,10 @@ After completing the steps, summarize:
 - Current status (0/N artifacts complete)
 - The template for the first artifact
 - Prompt: "Ready to create the first artifact? Just describe what this change is about and I'll draft it, or ask me to continue."
+
+**Next steps (after artifacts progress):**
+- Continue with `/opsx:continue`
+- **Review the design before implementing?** Say "grill me" to stress-test the plan
 
 **Guardrails**
 - Do NOT create any artifacts yet - just show the instructions

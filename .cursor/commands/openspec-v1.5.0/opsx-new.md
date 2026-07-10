@@ -5,6 +5,8 @@ category: Workflow
 description: Start a new change using the artifact workflow
 ---
 
-Read and follow the skill at `.cursor/skills/openspec-v1.5.0/openspec-new-change/SKILL.md`.
+Skill: openspec-new-change
+Path: .cursor/skills/openspec/openspec-new-change/SKILL.md
+Phase: design
 
 **Input**: The argument after `/opsx:new` is the change name (kebab-case), or a description of what to build.

@@ -62,7 +62,7 @@ When skills reference tools, use these Cursor equivalents:
 - `Subagent (general-purpose):` or `Task` with subagents → `Task` tool with `subagent_type` parameter
 - `Read`, `Write`, `Edit` → `Read`, `Write`, `StrReplace`
 - `Bash` → `Shell`
-- `AskQuestion` → Ask user directly or use question tool if available
+- `AskQuestion` / `AskUserQuestion` → 向用户提问确认（必要时列出选项）
 
 ---
 
@@ -127,7 +127,7 @@ When the project has OpenSpec initialized (`openspec/` directory exists), OpenSp
 | "Review design" / "Stress-test plan" / "Grill" | `grilling` |
 | "Fix bug" / debugging | `systematic-debugging` (superpowers retained) |
 
-**Superpowers quality skills always apply during implementation**: TDD, verification-before-completion, systematic-debugging, and code review are not affected by OpenSpec phase priority — they trigger normally when writing code. The trigger decision logic (especially TDD's gray-area handling) is defined in each implementation skill's Quality Integration section — see `openspec-apply-change` and `test-driven-development` SKILL.md. **When uncertain whether TDD applies, you MUST use AskQuestion to let the user decide. Never decide on your own.**
+**Superpowers quality skills always apply during implementation**: TDD, verification-before-completion, systematic-debugging, and code review are not affected by OpenSpec phase priority — they trigger normally when writing code. The trigger decision logic (especially TDD's gray-area handling) is defined in each implementation skill's Quality Integration section — see `openspec-apply-change` and `test-driven-development` SKILL.md. **When uncertain whether TDD applies, you MUST 向用户提问确认. Never decide on your own.**
 
 ### General Priority (no OpenSpec or debugging/quality scenarios)
 

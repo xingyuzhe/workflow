@@ -5,6 +5,8 @@ category: Workflow
 description: Archive multiple completed changes at once
 ---
 
-Read and follow the skill at `.cursor/skills/openspec-v1.5.0/openspec-bulk-archive-change/SKILL.md`.
+Skill: openspec-bulk-archive-change
+Path: .cursor/skills/openspec/openspec-bulk-archive-change/SKILL.md
+Phase: archive
 
 **Input**: None required (prompts for selection).

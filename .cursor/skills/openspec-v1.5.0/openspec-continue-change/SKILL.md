@@ -19,7 +19,7 @@ Continue working on a change by creating the next artifact.
 
 1. **If no change name provided, prompt for selection**
 
-   Run `openspec list --json` to get available changes sorted by most recently modified. Then use the **AskUserQuestion tool** to let the user select which change to work on.
+   Run `openspec list --json` to get available changes sorted by most recently modified. Then use the 向用户提问确认 to let the user select which change to work on.
 
    Present the top 3-4 most recently modified changes as options, showing:
    - Change name
@@ -102,6 +102,7 @@ After each invocation, show:
 - Current progress (N/M complete)
 - What artifacts are now unlocked
 - Prompt: "Want to continue? Just ask me to continue or tell me what to do next."
+- If `design` was just completed (or all design-phase artifacts are done): also suggest **"Review the design before implementing? Say grill me"**
 
 **Artifact Creation Guidelines**
 

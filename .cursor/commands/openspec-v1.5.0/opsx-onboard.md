@@ -5,6 +5,8 @@ category: Workflow
 description: Guided onboarding - walk through a complete OpenSpec workflow cycle with narration
 ---
 
-Read and follow the skill at `.cursor/skills/openspec-v1.5.0/openspec-onboard/SKILL.md`.
+Skill: openspec-onboard
+Path: .cursor/skills/openspec/openspec-onboard/SKILL.md
+Phase: explore
 
 **Input**: None required (guided experience).

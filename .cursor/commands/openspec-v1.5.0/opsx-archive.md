@@ -5,6 +5,8 @@ category: Workflow
 description: Archive a completed change
 ---
 
-Read and follow the skill at `.cursor/skills/openspec-v1.5.0/openspec-archive-change/SKILL.md`.
+Skill: openspec-archive-change
+Path: .cursor/skills/openspec/openspec-archive-change/SKILL.md
+Phase: archive
 
 **Input**: Optionally specify a change name (e.g., `/opsx:archive add-auth`). If omitted, infer from context or prompt for selection.

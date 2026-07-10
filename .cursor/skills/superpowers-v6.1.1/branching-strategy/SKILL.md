@@ -15,7 +15,7 @@ Set up an isolated development branch before starting feature work. Presents two
 
 ## Step 1: Present Options
 
-Always present these two options using the AskQuestion tool:
+Always present these two options — 向用户提问确认:
 
 ```
 How would you like to isolate this work?

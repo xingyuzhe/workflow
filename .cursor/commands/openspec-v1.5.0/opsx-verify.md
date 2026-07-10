@@ -5,6 +5,8 @@ category: Workflow
 description: Verify implementation matches change artifacts before archiving
 ---
 
-Read and follow the skill at `.cursor/skills/openspec-v1.5.0/openspec-verify-change/SKILL.md`.
+Skill: openspec-verify-change
+Path: .cursor/skills/openspec/openspec-verify-change/SKILL.md
+Phase: verify
 
 **Input**: Optionally specify a change name (e.g., `/opsx:verify add-auth`). If omitted, infer from context or prompt for selection.

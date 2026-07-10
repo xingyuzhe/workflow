@@ -5,6 +5,8 @@ category: Workflow
 description: "Enter explore mode - think through ideas, investigate problems, clarify requirements"
 ---
 
-Read and follow the skill at `.cursor/skills/openspec-v1.5.0/openspec-explore/SKILL.md`.
+Skill: openspec-explore
+Path: .cursor/skills/openspec/openspec-explore/SKILL.md
+Phase: explore
 
 **Input**: The argument after `/opsx:explore` is whatever the user wants to think about.

@@ -5,6 +5,8 @@ category: Workflow
 description: Fast-forward - create all artifacts needed for implementation in one go
 ---
 
-Read and follow the skill at `.cursor/skills/openspec-v1.5.0/openspec-ff-change/SKILL.md`.
+Skill: openspec-ff-change
+Path: .cursor/skills/openspec/openspec-ff-change/SKILL.md
+Phase: design
 
 **Input**: The argument after `/opsx:ff` is the change name (kebab-case), or a description of what to build.

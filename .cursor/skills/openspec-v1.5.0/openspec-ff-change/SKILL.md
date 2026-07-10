@@ -19,7 +19,7 @@ Fast-forward through artifact creation - generate everything needed to start imp
 
 1. **If no clear input provided, ask what they want to build**
 
-   Use the **AskUserQuestion tool** (open-ended, no preset options) to ask:
+   向用户提问确认 (open-ended, no preset options):
    > "What change do you want to work on? Describe what you want to build or fix."
 
    From their description, derive a kebab-case name (e.g., "add user authentication" → `add-user-auth`).
@@ -79,7 +79,7 @@ Fast-forward through artifact creation - generate everything needed to start imp
       - Stop when all `applyRequires` artifacts are done
 
    c. **If an artifact requires user input** (unclear context):
-      - Use **AskUserQuestion tool** to clarify
+      - 向用户提问确认 to clarify
       - Then continue with creation
 
 6. **Show final status**
@@ -94,6 +94,10 @@ After completing all artifacts, summarize:
 - List of artifacts created with brief descriptions
 - What's ready: "All artifacts created! Ready for implementation."
 - Prompt: "Run `/opsx:apply` or ask me to implement to start working on the tasks."
+
+**Next steps:**
+- Implement with `/opsx:apply`
+- **Review the design first?** Say "grill me" to walk through each decision
 
 **Artifact Creation Guidelines**
 

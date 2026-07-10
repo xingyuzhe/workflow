@@ -22,7 +22,7 @@ Implement tasks from an OpenSpec change.
    If a name is provided, use it. Otherwise:
    - Infer from conversation context if the user mentioned a change
    - Auto-select if only one active change exists
-   - If ambiguous, run `openspec list --json` to get available changes and use the **AskUserQuestion tool** to let the user select
+   - If ambiguous, run `openspec list --json` to get available changes and use the 向用户提问确认 to let the user select
 
    Always announce: "Using change: <name>" and how to override (e.g., `/opsx:apply <other>`).
 
@@ -45,7 +45,8 @@ Implement tasks from an OpenSpec change.
    ```
 
    If the developer agrees:
-   - Load all change artifacts (proposal, design, specs) from `contextFiles`
+   - Run `openspec status --change "<name>" --json` and locate artifacts via `changeRoot` / `artifactPaths` (do NOT use `contextFiles` here — that field only appears later from `openspec instructions apply`)
+   - Load proposal, design, and specs from those paths
    - Use `grilling` to walk through each design decision, asking one question at a time
    - Provide recommended answers for each question
    - Look up codebase facts rather than asking about them
@@ -62,6 +63,7 @@ Implement tasks from an OpenSpec change.
    - `schemaName`: The workflow being used (e.g., "spec-driven")
    - `planningHome`, `changeRoot`, and `actionContext`: planning scope and edit constraints
    - Which artifact contains the tasks (typically "tasks" for spec-driven, check status for others)
+   - (Skip re-running if already executed during Step 3 grilling)
 
 5. **Get apply instructions**
 
