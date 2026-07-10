@@ -1,0 +1,1 @@
+---name: /opsx-newid: opsx-newcategory: Workflowdescription: Start a new change using the artifact workflow---Read and follow the skill at `.cursor/skills/openspec-v1.2.0/openspec-new-change/SKILL.md`.**Input**: The argument after `/opsx:new` is the change name (kebab-case), or a description of what to build.

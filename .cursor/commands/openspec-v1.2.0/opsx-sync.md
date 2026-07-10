@@ -1,0 +1,1 @@
+---name: /opsx-syncid: opsx-synccategory: Workflowdescription: Sync delta specs from a change to main specs---Read and follow the skill at `.cursor/skills/openspec-v1.2.0/openspec-sync-specs/SKILL.md`.**Input**: Optionally specify a change name (e.g., `/opsx:sync add-auth`). If omitted, infer from context or prompt for selection.

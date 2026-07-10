@@ -1,0 +1,1 @@
+---name: /opsx-onboardid: opsx-onboardcategory: Workflowdescription: Guided onboarding - walk through a complete OpenSpec workflow cycle with narration---Read and follow the skill at `.cursor/skills/openspec-v1.2.0/openspec-onboard/SKILL.md`.**Input**: None required (guided experience).

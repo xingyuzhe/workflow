@@ -1,0 +1,150 @@
+---
+description: Superpowers - structured AI development workflow with composable skills
+globs:
+alwaysApply: true
+---
+
+# Superpowers Bootstrap
+
+<SUBAGENT-STOP>
+If you were dispatched as a subagent to execute a specific task, ignore this skill. Follow the instructions you were given and complete your task.
+</SUBAGENT-STOP>
+
+You have superpowers.
+
+**IMPORTANT: The using-superpowers skill content is included below. It is ALREADY LOADED - you are currently following it. Do NOT read "using-superpowers" again - that would be redundant.**
+
+## How to Access Skills in Cursor
+
+Use the `Read` tool on skill files. Path resolution order (try first match):
+
+1. `.cursor/skills/superpowers-v6.1.1/{skill-name}/SKILL.md`
+2. `.cursor/skills/openspec-v1.5.0/{skill-name}/SKILL.md`
+3. `skills/opsx-superpowers/superpowers-v6.1.1/{skill-name}/SKILL.md`
+4. `skills/opsx-superpowers/openspec-v1.5.0/{skill-name}/SKILL.md`
+
+**Superpowers skills** (via `superpowers-v6.1.1`):
+- `test-driven-development` - RED-GREEN-REFACTOR cycle
+- `systematic-debugging` - 4-phase root cause process
+- `writing-plans` - Detailed implementation plans with self-review
+- `executing-plans` - Execute all tasks from a plan then complete
+- `subagent-driven-development` - Fresh subagent per task + task review + broad final review
+- `branching-strategy` - Feature branch (default) or worktree isolation
+- `using-git-worktrees` - Worktree strategy with native tool detection (called by branching-strategy)
+- `finishing-a-development-branch` - Environment-aware merge/PR/discard decision workflow
+- `dispatching-parallel-agents` - Concurrent subagent workflows
+- `requesting-code-review` - Pre-review checklist and reviewer dispatch
+- `receiving-code-review` - Responding to feedback
+- `verification-before-completion` - Ensure fixes work
+- `writing-skills` - Create new skills
+
+**OpenSpec skills** (via `openspec-v1.5.0`):
+- `openspec-explore` - Think through problems before/during work
+- `openspec-new-change` - Start a new change, step by step
+- `openspec-ff-change` - Fast-forward: all artifacts at once
+- `openspec-apply-change` - Implement tasks from a change
+- `openspec-continue-change` - Continue an existing change
+- `openspec-verify-change` - Verify implementation matches artifacts
+- `openspec-archive-change` - Archive a completed change
+- `openspec-bulk-archive-change` - Archive multiple changes
+- `openspec-sync-specs` - Sync specs across changes
+- `openspec-onboard` - Guided first-time walkthrough
+
+**To load a skill:** Try paths in order above until found
+
+## Tool Mapping for Cursor
+
+When skills reference tools, use these Cursor equivalents:
+- `Skill` tool → Use `Read` tool on skill path (see path resolution order above)
+- `TodoWrite` → `TodoWrite` (identical)
+- `Subagent (general-purpose):` or `Task` with subagents → `Task` tool with `subagent_type` parameter
+- `Read`, `Write`, `Edit` → `Read`, `Write`, `StrReplace`
+- `Bash` → `Shell`
+- `AskQuestion` → Ask user directly or use question tool if available
+
+---
+
+# Using Skills
+
+<EXTREMELY-IMPORTANT>
+If you think there is even a 1% chance a skill might apply to what you are doing, you ABSOLUTELY MUST read and follow the skill.
+
+IF A SKILL APPLIES TO YOUR TASK, YOU DO NOT HAVE A CHOICE. YOU MUST USE IT.
+
+This is not negotiable. This is not optional. You cannot rationalize your way out of this.
+</EXTREMELY-IMPORTANT>
+
+## The Rule
+
+**Read and follow relevant skills BEFORE any response or action.** Even a 1% chance a skill might apply means that you should read the skill to check. If a skill turns out to be wrong for the situation, you don't need to use it.
+
+## Workflow
+
+1. User message received
+2. Ask: "Might any skill apply?" 
+   - If yes (even 1% chance) → Read the skill file
+   - If definitely not → Respond directly
+3. Announce: "Using [skill] to [purpose]"
+4. If skill has checklist → Create TodoWrite todo per item
+5. Follow skill exactly
+6. Respond (including clarifications)
+
+## Red Flags
+
+These thoughts mean STOP—you're rationalizing:
+
+| Thought | Reality |
+|---------|---------|
+| "This is just a simple question" | Questions are tasks. Check for skills. |
+| "I need more context first" | Skill check comes BEFORE clarifying questions. |
+| "Let me explore the codebase first" | Skills tell you HOW to explore. Check first. |
+| "I can check git/files quickly" | Files lack conversation context. Check for skills. |
+| "Let me gather information first" | Skills tell you HOW to gather information. |
+| "This doesn't need a formal skill" | If a skill exists, use it. |
+| "I remember this skill" | Skills evolve. Read current version. |
+| "This doesn't count as a task" | Action = task. Check for skills. |
+| "The skill is overkill" | Simple things become complex. Use it. |
+| "I'll just do this one thing first" | Check BEFORE doing anything. |
+| "This feels productive" | Undisciplined action wastes time. Skills prevent this. |
+| "I know what that means" | Knowing the concept ≠ using the skill. Read it. |
+
+## Skill Priority
+
+When multiple skills could apply, use this order:
+
+### OpenSpec Priority (when `openspec/` directory exists)
+
+When the project has OpenSpec initialized (`openspec/` directory exists), OpenSpec skills take priority during requirements/design/planning phases:
+
+| User Intent | Skill |
+|-------------|-------|
+| "Build X" / "New feature" / "Add Y" | `openspec-new-change` or `openspec-ff-change` |
+| "Explore ideas" / "How to do" / "Compare approaches" | `openspec-explore` |
+| "Continue previous work" | `openspec-continue-change` |
+| "Implement" / "Start coding" | `openspec-apply-change` |
+| "Fix bug" / debugging | `systematic-debugging` (superpowers retained) |
+
+**Superpowers quality skills always apply during implementation**: TDD, verification-before-completion, systematic-debugging, and code review are not affected by OpenSpec phase priority — they trigger normally when writing code. The trigger decision logic (especially TDD's gray-area handling) is defined in each implementation skill's Quality Integration section — see `openspec-apply-change` and `test-driven-development` SKILL.md. **When uncertain whether TDD applies, you MUST use AskQuestion to let the user decide. Never decide on your own.**
+
+### General Priority (no OpenSpec or debugging/quality scenarios)
+
+1. **Process skills first** (debugging) - these determine HOW to approach the task
+2. **Implementation skills second** - these guide execution
+
+"Fix this bug" → systematic-debugging first, then domain-specific skills.
+
+## Platform Adaptation
+
+If skills reference platform-specific concepts (native worktree tools, etc.), adapt to Cursor's capabilities. When a skill mentions `EnterWorktree` or similar native tools, use the Cursor equivalent or fall back to manual git commands via Shell.
+
+## Skill Types
+
+**Rigid** (TDD, debugging): Follow exactly. Don't adapt away discipline.
+
+**Flexible** (patterns): Adapt principles to context.
+
+The skill itself tells you which.
+
+## User Instructions
+
+User instructions (CLAUDE.md, AGENTS.md, GEMINI.md, .cursor/rules, direct requests) take precedence over skills, which in turn override default behavior. Only skip skill workflows or instructions when your human partner has explicitly told you to.
