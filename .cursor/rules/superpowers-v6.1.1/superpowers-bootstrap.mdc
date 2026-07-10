@@ -20,8 +20,6 @@ Use the `Read` tool on skill files. Path resolution order (try first match):
 
 1. `.cursor/skills/superpowers-v6.1.1/{skill-name}/SKILL.md`
 2. `.cursor/skills/openspec-v1.5.0/{skill-name}/SKILL.md`
-3. `skills/opsx-superpowers/superpowers-v6.1.1/{skill-name}/SKILL.md`
-4. `skills/opsx-superpowers/openspec-v1.5.0/{skill-name}/SKILL.md`
 
 **Superpowers skills** (via `superpowers-v6.1.1`):
 - `test-driven-development` - RED-GREEN-REFACTOR cycle
