@@ -23,6 +23,7 @@ OS_VERSION="openspec-v1.5.0"
 
 SP_SOURCE="$REPO_ROOT/.cursor/skills/$SP_VERSION"
 OS_SOURCE="$REPO_ROOT/.cursor/skills/$OS_VERSION"
+GRILLING_SOURCE="$REPO_ROOT/.cursor/skills/grilling"
 COMMANDS_SOURCE_DIR="$REPO_ROOT/.cursor/commands/$OS_VERSION"
 RULES_SOURCE="$REPO_ROOT/.cursor/rules/$SP_VERSION/superpowers-bootstrap.mdc"
 
@@ -69,6 +70,11 @@ if [ ! -f "$RULES_SOURCE" ]; then
     SOURCE_OK=false
 fi
 
+if [ ! -d "$GRILLING_SOURCE" ]; then
+    fail "Grilling 源目录不存在: $GRILLING_SOURCE"
+    SOURCE_OK=false
+fi
+
 if [ "$SOURCE_OK" = false ]; then
     echo ""
     fail "技能源验证失败，请检查 workflow 项目结构。"
@@ -80,10 +86,12 @@ info "技能源验证通过"
 # Count source skills
 SP_SKILL_COUNT=$(find "$SP_SOURCE" -name "SKILL.md" | wc -l)
 OS_SKILL_COUNT=$(find "$OS_SOURCE" -name "SKILL.md" | wc -l)
+GRILLING_COUNT=$(find "$GRILLING_SOURCE" -name "SKILL.md" | wc -l)
 CMD_COUNT=$(find "$COMMANDS_SOURCE_DIR" -name "opsx-*.md" | wc -l)
 
 echo "  Superpowers skills: $SP_SKILL_COUNT"
 echo "  OpenSpec skills:    $OS_SKILL_COUNT"
+echo "  Grilling:           $GRILLING_COUNT"
 echo "  Commands:           $CMD_COUNT"
 
 CURSOR_DIR="$PROJECT_ROOT/.cursor"
@@ -135,6 +143,11 @@ fi
 if compgen -G "$SKILLS_DIR/superpowers-v*" > /dev/null 2>&1; then
     CONFLICT_FOUND=true
     CONFLICT_DETAILS+=("$SKILLS_DIR/superpowers-v*")
+fi
+
+if [ -d "$SKILLS_DIR/grilling" ]; then
+    CONFLICT_FOUND=true
+    CONFLICT_DETAILS+=("$SKILLS_DIR/grilling")
 fi
 
 # Check for any existing opsx command files (flat or versioned)
@@ -196,6 +209,7 @@ if [ "$CONFLICT_FOUND" = true ]; then
     # Clear all existing openspec/superpowers skill versions
     clear_managed_artifacts "$SKILLS_DIR/openspec-*"
     clear_managed_artifacts "$SKILLS_DIR/superpowers-v*"
+    clear_managed_artifacts "$SKILLS_DIR/grilling"
     # Clear flat commands and versioned command directories
     clear_managed_artifacts "$COMMANDS_TARGET_DIR/opsx-*.md"
     clear_managed_artifacts "$COMMANDS_TARGET_DIR/openspec-*"
@@ -236,6 +250,10 @@ info "$SP_VERSION: $(find "$SKILLS_DIR/$SP_VERSION" -name "SKILL.md" | wc -l) sk
 echo "  复制 $OS_VERSION ..."
 cp -R "$OS_SOURCE" "$SKILLS_DIR/$OS_VERSION"
 info "$OS_VERSION: $(find "$SKILLS_DIR/$OS_VERSION" -name "SKILL.md" | wc -l) skills 已部署"
+
+echo "  复制 grilling ..."
+cp -R "$GRILLING_SOURCE" "$SKILLS_DIR/grilling"
+info "grilling: $(find "$SKILLS_DIR/grilling" -name "SKILL.md" | wc -l) skill 已部署"
 
 # ── Step 5: copy command files ──
 title "部署命令目录"
@@ -289,6 +307,11 @@ OS_DEPLOYED=$(find "$SKILLS_DIR/$OS_VERSION" -name "SKILL.md" 2>/dev/null | wc -
     && ITEMS+=("  ✅ $OS_VERSION: $OS_DEPLOYED skills") \
     || ITEMS+=("  ❌ $OS_VERSION: 未部署")
 
+GRILLING_DEPLOYED=$(find "$SKILLS_DIR/grilling" -name "SKILL.md" 2>/dev/null | wc -l)
+[ "$GRILLING_DEPLOYED" -gt 0 ] \
+    && ITEMS+=("  ✅ grilling: 已部署") \
+    || ITEMS+=("  ❌ grilling: 未部署")
+
 CMD_DEPLOYED=$(compgen -G "$COMMANDS_TARGET_DIR/opsx-*.md" 2>/dev/null | wc -l)
 [ "$CMD_DEPLOYED" -gt 0 ] \
     && ITEMS+=("  ✅ opsx commands: $CMD_DEPLOYED files") \
@@ -315,7 +338,8 @@ echo "    │   ├── rules/"
 echo "    │   │   └── superpowers-bootstrap.mdc"
 echo "    │   └── skills/"
 echo "    │       ├── $SP_VERSION/  ($SP_DEPLOYED skills)"
-echo "    │       └── $OS_VERSION/      ($OS_DEPLOYED skills)"
+echo "    │       ├── $OS_VERSION/      ($OS_DEPLOYED skills)"
+echo "    │       └── grilling/              (1 skill)"
 echo "    └── openspec/                     (变更管理目录)"
 echo ""
 echo "  下一步: 在 Cursor 中试试 /opsx:explore 或 /opsx:new"

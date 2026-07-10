@@ -20,6 +20,7 @@ Use the `Read` tool on skill files. Path resolution order (try first match):
 
 1. `.cursor/skills/superpowers-v6.1.1/{skill-name}/SKILL.md`
 2. `.cursor/skills/openspec-v1.5.0/{skill-name}/SKILL.md`
+3. `.cursor/skills/grilling/{skill-name}/SKILL.md`
 
 **Superpowers skills** (via `superpowers-v6.1.1`):
 - `test-driven-development` - RED-GREEN-REFACTOR cycle
@@ -49,6 +50,9 @@ Use the `Read` tool on skill files. Path resolution order (try first match):
 - `openspec-onboard` - Guided first-time walkthrough
 
 **To load a skill:** Try paths in order above until found
+
+**Misc skills** (via `grilling`):
+- `grilling` - Stress-test a design by walking through decisions one-by-one
 
 ## Tool Mapping for Cursor
 
@@ -120,6 +124,7 @@ When the project has OpenSpec initialized (`openspec/` directory exists), OpenSp
 | "Explore ideas" / "How to do" / "Compare approaches" | `openspec-explore` |
 | "Continue previous work" | `openspec-continue-change` |
 | "Implement" / "Start coding" | `openspec-apply-change` |
+| "Review design" / "Stress-test plan" / "Grill" | `grilling` |
 | "Fix bug" / debugging | `systematic-debugging` (superpowers retained) |
 
 **Superpowers quality skills always apply during implementation**: TDD, verification-before-completion, systematic-debugging, and code review are not affected by OpenSpec phase priority — they trigger normally when writing code. The trigger decision logic (especially TDD's gray-area handling) is defined in each implementation skill's Quality Integration section — see `openspec-apply-change` and `test-driven-development` SKILL.md. **When uncertain whether TDD applies, you MUST use AskQuestion to let the user decide. Never decide on your own.**

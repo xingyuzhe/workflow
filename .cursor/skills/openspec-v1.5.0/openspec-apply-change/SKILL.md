@@ -35,7 +35,26 @@ Implement tasks from an OpenSpec change.
 
    **IMPORTANT**: Do NOT implement directly on main/master. Always isolate first.
 
-3. **Check status to understand the schema**
+3. **Offer design review (grilling) before implementing**
+
+   Before diving into code, offer to stress-test the design:
+   ```
+   Ready to implement this change. Before writing code, would you like to run a design review?
+   I'll walk through the proposal, design, and specs, asking targeted questions to surface
+   edge cases, hidden assumptions, and potential issues.
+   ```
+
+   If the developer agrees:
+   - Load all change artifacts (proposal, design, specs) from `contextFiles`
+   - Use `grilling` to walk through each design decision, asking one question at a time
+   - Provide recommended answers for each question
+   - Look up codebase facts rather than asking about them
+   - Update artifacts if decisions change during the review
+   - Only proceed to implementation after confirmed shared understanding
+
+   If the developer declines, proceed directly to the next step.
+
+4. **Check status to understand the schema**
    ```bash
    openspec status --change "<name>" --json
    ```
@@ -44,7 +63,7 @@ Implement tasks from an OpenSpec change.
    - `planningHome`, `changeRoot`, and `actionContext`: planning scope and edit constraints
    - Which artifact contains the tasks (typically "tasks" for spec-driven, check status for others)
 
-4. **Get apply instructions**
+5. **Get apply instructions**
 
    ```bash
    openspec instructions apply --change "<name>" --json
@@ -61,14 +80,14 @@ Implement tasks from an OpenSpec change.
    - If `state: "all_done"`: congratulate, suggest archive
    - Otherwise: proceed to implementation
 
-5. **Read context files**
+6. **Read context files**
 
    Read every file path listed under `contextFiles` from the apply instructions output.
    The files depend on the schema being used:
    - **spec-driven**: proposal, specs, design, tasks
    - Other schemas: follow the contextFiles from CLI output
 
-6. **Show current progress**
+7. **Show current progress**
 
    Display:
    - Schema being used
@@ -76,7 +95,7 @@ Implement tasks from an OpenSpec change.
    - Remaining tasks overview
    - Dynamic instruction from CLI
 
-7. **Optional: Expand tasks into atomic steps**
+8. **Optional: Expand tasks into atomic steps**
 
    Before starting implementation, assess task complexity. If tasks involve non-trivial code logic, offer to expand them using the `writing-plans` methodology:
 
@@ -96,7 +115,7 @@ Implement tasks from an OpenSpec change.
 
    If the developer declines, proceed directly with the tasks as written.
 
-8. **Implement tasks (loop until done or blocked)**
+9. **Implement tasks (loop until done or blocked)**
 
    For each pending task:
    - Show which task is being worked on
@@ -114,7 +133,7 @@ Implement tasks from an OpenSpec change.
 
    **Review checkpoint:** After every 3 completed tasks (or at end if fewer), run the full test suite and report status before continuing.
 
-9. **On completion or pause, show status**
+10. **On completion or pause, show status**
 
    Display:
    - Tasks completed this session
