@@ -59,35 +59,42 @@ Superpowers 和 OpenSpec 技能已经过定制化改造：
 
 ## 5. 目录结构（workflow 自持）
 
+源仓库只保留**最新**版本化目录；部署到目标项目时展平为无版本号路径。
+
 ```
 workflow/
-├── bootstrap.sh                    # 一键部署脚本
-├── superpowers-v4.3.1/             # 定制后的 Superpowers 技能（14个）
-├── openspec-v1.2.0/                # 定制后的 OpenSpec 技能（10个）
-├── commands-claude/                # Claude Code 命令（/opsx-xxx 语法）
-├── commands-cursor/                # Cursor 命令（/opsx:xxx 语法）
-├── skills/grilling/                # grilling 对抗性审查技能
-├── templates/                      # CLAUDE.md / Cursor 模板
-└── README.md
+├── versions.conf                   # SUPERPOWERS_VERSION / OPENSPEC_VERSION
+├── manifest.template.json
+├── scripts/
+│   ├── init.sh                     # 一键部署（支持 --yes）
+│   └── workflow-doctor.sh          # 部署健康检查
+├── .cursor/
+│   ├── commands/openspec-v1.5.0/   # 命令源（部署时展平）
+│   ├── rules/superpowers-v6.1.1/   # router 源
+│   └── skills/
+│       ├── superpowers-v6.1.1/     # 最新 Superpowers
+│       ├── openspec-v1.5.0/        # 最新 OpenSpec
+│       ├── grilling/
+│       └── workflow/               # constitution / implementation-mode / workflow-doctor
+├── compat/using-superpowers/       # 不参与部署
+└── docs/
 ```
 
 部署到目标项目后的结构：
 
 ```
 target-project/
-├── CLAUDE.md
-├── .claude/
-│   ├── commands/opsx-*.md          # Claude 原生命令
-│   └── skills/
-│       ├── superpowers-v4.3.1/
-│       ├── openspec-{version}/
-│       └── grilling/
 ├── .cursor/
-│   ├── commands/opsx-*.md          # Cursor 命令
-│   ├── rules/superpowers-bootstrap.mdc
-│   └── skills/
-│       ├── superpowers-v4.3.1/
-│       ├── openspec-{version}/
-│       └── grilling/
-└── openspec/                       # OpenSpec 变更目录（openspec init --tools none）
+│   ├── commands/opsx-*.md
+│   ├── rules/superpowers-router.mdc
+│   ├── skills/
+│   │   ├── superpowers/            # 无版本号
+│   │   ├── openspec/
+│   │   ├── grilling/
+│   │   └── workflow/
+│   └── workflow/
+│       ├── version.json
+│       ├── manifest.json
+│       └── doctor.sh
+└── openspec/
 ```

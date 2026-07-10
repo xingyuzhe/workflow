@@ -1,1 +1,0 @@
----name: /opsx-applyid: opsx-applycategory: Workflowdescription: Implement tasks from an OpenSpec change---Read and follow the skill at `.cursor/skills/openspec-v1.2.0/openspec-apply-change/SKILL.md`.**Input**: Optionally specify a change name (e.g., `/opsx:apply add-auth`). If omitted, infer from context or prompt for selection.

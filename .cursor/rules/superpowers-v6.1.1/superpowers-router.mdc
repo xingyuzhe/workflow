@@ -28,8 +28,10 @@ If you were dispatched as a subagent to execute a specific task, ignore this. Fo
 | Build / New feature / Add | openspec-new-change or openspec-ff-change |
 | Explore / How to / Compare | openspec-explore |
 | Continue / Resume | openspec-continue-change |
-| Implement / Start coding | openspec-apply-change |
+| Implement / Start coding | implementation-mode (then hand off) |
+| `/opsx:apply` (explicit) | openspec-apply-change |
 | Review design / Grill | grilling |
+| Doctor / Diagnose deploy | workflow-doctor |
 | Fix bug / Debug | systematic-debugging |
 | Write plan | writing-plans |
 | Execute plan | executing-plans or subagent-driven-development |
@@ -37,6 +39,7 @@ If you were dispatched as a subagent to execute a specific task, ignore this. Fo
 | Complete / Merge / PR | finishing-a-development-branch |
 
 *SDD requires Git Bash. On Windows without Git Bash, use executing-plans.*
+*When implement path is already explicit (`/opsx:apply`, named skill), skip implementation-mode.*
 
 **Internal skills** (do NOT call directly):
 - using-git-worktrees → via branching-strategy only

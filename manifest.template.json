@@ -31,12 +31,13 @@
       "phase": "review",
       "path": ".cursor/skills/grilling/SKILL.md",
       "triggers": ["grill", "stress-test", "review design"],
-      "optional": true
+      "optional": true,
+      "outputs": ["review-notes.md"]
     },
     "openspec-apply-change": {
       "phase": "implement",
       "path": ".cursor/skills/openspec/openspec-apply-change/SKILL.md",
-      "triggers": ["implement", "start coding", "/opsx:apply"],
+      "triggers": ["/opsx:apply"],
       "requires": ["branching-strategy"],
       "recommends": ["grilling", "writing-plans"]
     },
@@ -132,12 +133,23 @@
       "phase": "internal",
       "path": ".cursor/skills/workflow/constitution/SKILL.md",
       "internal": true
+    },
+    "implementation-mode": {
+      "phase": "implement",
+      "path": ".cursor/skills/workflow/implementation-mode/SKILL.md",
+      "triggers": ["implement", "start coding", "how to implement"]
+    },
+    "workflow-doctor": {
+      "phase": "verify",
+      "path": ".cursor/skills/workflow/workflow-doctor/SKILL.md",
+      "triggers": ["doctor", "diagnose", "/opsx:doctor"]
     }
   },
   "implementation_modes": {
     "single_session": "openspec-apply-change",
     "plan_file": "executing-plans",
     "parallel_tasks": "subagent-driven-development",
+    "chooser": "implementation-mode",
     "platform_fallback": {
       "windows_no_git_bash": "executing-plans"
     }

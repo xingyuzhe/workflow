@@ -1,1 +1,0 @@
----name: /opsx-continueid: opsx-continuecategory: Workflowdescription: Continue working on a change - create the next artifact---Read and follow the skill at `.cursor/skills/openspec-v1.2.0/openspec-continue-change/SKILL.md`.**Input**: Optionally specify a change name (e.g., `/opsx:continue add-auth`). If omitted, infer from context or prompt for selection.

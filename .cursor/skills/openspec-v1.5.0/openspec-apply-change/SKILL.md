@@ -51,6 +51,7 @@ Implement tasks from an OpenSpec change.
    - Provide recommended answers for each question
    - Look up codebase facts rather than asking about them
    - Update artifacts if decisions change during the review
+   - Ensure `openspec/changes/<name>/review-notes.md` is written/updated before proceeding
    - Only proceed to implementation after confirmed shared understanding
 
    If the developer declines, proceed directly to the next step.

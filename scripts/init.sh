@@ -490,6 +490,27 @@ else
     warn "未能注入版本字段，已复制 manifest.template.json 原文"
 fi
 
+# Copy doctor script into deployed metadata dir
+if [ -f "$REPO_ROOT/scripts/workflow-doctor.sh" ]; then
+    cp "$REPO_ROOT/scripts/workflow-doctor.sh" "$WORKFLOW_META_DIR/doctor.sh"
+    chmod +x "$WORKFLOW_META_DIR/doctor.sh" 2>/dev/null || true
+    info "doctor.sh 已写入"
+fi
+
+# ── Step 8: post-deploy doctor ──
+title "部署后自检 (workflow-doctor)"
+
+DOCTOR_SCRIPT="$WORKFLOW_META_DIR/doctor.sh"
+if [ -f "$DOCTOR_SCRIPT" ]; then
+    if bash "$DOCTOR_SCRIPT" "$PROJECT_ROOT"; then
+        info "workflow-doctor 通过"
+    else
+        warn "workflow-doctor 发现问题（部署已完成，请根据上方 FAIL 项修复）"
+    fi
+else
+    warn "未找到 doctor.sh，跳过自检"
+fi
+
 # ── Summary ──
 echo ""
 echo "═══════════════════════════════════════════════"
@@ -540,6 +561,10 @@ CMD_DEPLOYED_COUNT=$(compgen -G "$COMMANDS_TARGET_DIR/opsx-*.md" 2>/dev/null | w
     && ITEMS+=("  ✅ manifest.json: 已写入") \
     || ITEMS+=("  ❌ manifest.json: 未写入")
 
+[ -f "$WORKFLOW_META_DIR/doctor.sh" ] \
+    && ITEMS+=("  ✅ doctor.sh: 已写入") \
+    || ITEMS+=("  ⚠️  doctor.sh: 未写入")
+
 if [ -d "$SKILLS_DIR/$SP_DEPLOY_NAME/using-superpowers" ]; then
     ITEMS+=("  ❌ using-superpowers 不应被部署")
 else
@@ -568,8 +593,9 @@ echo "    │   │   ├── grilling/"
 echo "    │   │   └── workflow/              (constitution)"
 echo "    │   └── workflow/"
 echo "    │       ├── version.json"
-echo "    │       └── manifest.json"
+echo "    │       ├── manifest.json"
+echo "    │       └── doctor.sh"
 echo "    └── openspec/                     (变更管理目录)"
 echo ""
-echo "  下一步: 在 Cursor 中试试 /opsx:explore 或 /opsx:new"
+echo "  下一步: 在 Cursor 中试试 /opsx:explore、/opsx:new 或 /opsx:doctor"
 echo ""
