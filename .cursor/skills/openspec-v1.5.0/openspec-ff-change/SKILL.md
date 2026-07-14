@@ -109,6 +109,19 @@ After completing all artifacts, summarize:
   - Do NOT copy `<context>`, `<rules>`, `<project_context>` blocks into the artifact
   - These guide what you write, but should never appear in the output
 
+**Per-capability design companion (spec-driven):**
+When creating the `specs` artifact, for **every** capability under `specs/<capability>/`:
+1. Write `spec.md` (delta requirements / scenarios only — no file trees)
+2. **In the same pass**, write `specs/<capability>/design.md` (module SSOT: 职责、文件结构、关键类型、边界)
+3. Do not mark specs complete if any capability is missing `design.md`
+
+**Anti-duplication:**
+- `proposal.md` = why/scope; change-level `design.md` = cross-cutting decisions; `specs/<cap>/design.md` = module internals; `spec.md` = behaviors
+- Do not copy the same file tree / type block into proposal and both designs — one SSOT, others link
+- Change-level design references modules by name; module design references change Decisions by ID when needed
+
+Change-level `design.md` is separate and still required for cross-cutting decisions.
+
 **Guardrails**
 - Create ALL artifacts needed for implementation (as defined by schema's `apply.requires`)
 - Always read dependency artifacts before creating a new one

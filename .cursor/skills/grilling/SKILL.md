@@ -20,11 +20,12 @@ Use `changeRoot` / `artifactPaths` to load artifacts (do **not** use `contextFil
 | Artifact | Required? | Review focus |
 |----------|-----------|--------------|
 | proposal | Required | Why, scope, non-goals, capabilities |
-| design | Required | Architecture, trade-offs, risks |
-| specs/ | Required | Behaviors, edge cases, acceptance |
+| design (change-level) | Required | Cross-cutting architecture, trade-offs, risks |
+| specs/*/spec.md | Required | Behaviors, edge cases, acceptance |
+| specs/*/design.md | Required companion | Per-capability module design (paired with each spec) |
 | tasks.md | Optional | Scope of implementation only — do not re-plan tasks here |
 
-If required artifacts are missing, stop and suggest `/opsx:continue` before grilling.
+If required artifacts are missing (including any capability lacking `design.md`), stop and suggest `/opsx:continue` before grilling.
 
 ## Outputs
 

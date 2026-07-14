@@ -127,16 +127,18 @@ If the user mentions a change or you detect one is relevant:
 
     | Insight Type               | Where to Capture               |
     |----------------------------|--------------------------------|
-    | New requirement discovered | `specs/<capability>/spec.md` |
+    | New requirement discovered | `specs/<capability>/spec.md` (+ keep `design.md` in sync) |
     | Requirement changed        | `specs/<capability>/spec.md` |
-    | Design decision made       | `design.md`                  |
+    | Module design decision     | `specs/<capability>/design.md` |
+    | Cross-cutting design decision | change-level `design.md`   |
     | Scope changed              | `proposal.md`                |
     | New work identified        | `tasks.md`                   |
     | Assumption invalidated     | Relevant artifact              |
 
    Example offers:
-   - "That's a design decision. Capture it in design.md?"
-   - "This is a new requirement. Add it to specs?"
+   - "That's a module design decision. Capture it in specs/<capability>/design.md?"
+   - "That's cross-cutting. Capture it in change-level design.md?"
+   - "This is a new requirement. Add it to specs (spec.md + design companion)?"
    - "This changes scope. Update the proposal?"
 
 4. **The user decides** - Offer and move on. Don't pressure. Don't auto-capture.

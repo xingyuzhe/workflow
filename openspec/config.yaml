@@ -1,20 +1,20 @@
 schema: spec-driven
 
-# Project context (optional)
-# This is shown to AI when creating artifacts.
-# Add your tech stack, conventions, style guides, domain knowledge, etc.
-# Example:
-#   context: |
-#     Tech stack: TypeScript, React, Node.js
-#     We use conventional commits
-#     Domain: e-commerce platform
-
-# Per-artifact rules (optional)
-# Add custom rules for specific artifacts.
-# Example:
-#   rules:
-#     proposal:
-#       - Keep proposals under 500 words
-#       - Always include a "Non-goals" section
-#     tasks:
-#       - Break tasks into chunks of max 2 hours
+# Per-capability design companion + anti-duplication (SSOT)
+rules:
+  proposal:
+    - Own Why / What Changes / Capabilities / Impact / Non-goals only
+    - Keep What Changes as a bullet list; do not paste file trees, type definitions, or WHEN/THEN scenarios
+    - Do not duplicate content that belongs in design.md or specs/*/design.md
+  specs:
+    - For every capability under specs/<capability>/, create BOTH spec.md AND design.md in the same step
+    - spec.md owns requirements and scenarios only (ADDED/MODIFIED/REMOVED/RENAMED + SHALL + Scenario)
+    - design.md owns module SSOT: 职责、文件结构、关键类型/接口、模块内状态机、与邻接模块的接口契约
+    - Never leave a capability with only spec.md
+    - Do not copy proposal Why or change-level Decisions verbatim into module design
+  design:
+    - Change-level design.md owns cross-cutting decisions only (跨模块取舍、迁移步骤、共享约束、能力间协作)
+    - Reference modules by name; do NOT copy each module's file tree or full type definitions
+    - Point to specs/<capability>/design.md for module internals ("细节见 specs/<capability>/design.md")
+    - Point to proposal.md for Why/scope ("背景见 proposal") instead of restating it
+    - If the same fact appears in two places at >5 lines, keep the SSOT and replace the other with a link

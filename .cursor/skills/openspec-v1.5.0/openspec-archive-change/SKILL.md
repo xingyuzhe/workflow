@@ -59,14 +59,18 @@ Archive a completed change in the experimental workflow.
 
    **If delta specs exist:**
    - Compare each delta spec with its corresponding main spec at `openspec/specs/<capability>/spec.md`
-   - Determine what changes would be applied (adds, modifications, removals, renames)
-   - Show a combined summary before prompting
+   - For each capability, also check the design companion pair:
+     - change: `specs/<capability>/design.md`
+     - main: `openspec/specs/<capability>/design.md`
+   - If a delta capability is missing `design.md`, note it will be created during sync (per openspec-sync-specs)
+   - Determine what changes would be applied (adds, modifications, removals, renames, design creates/updates)
+   - Show a combined summary before prompting (include design companion status)
 
    **Prompt options:**
    - If changes needed: "Sync now (recommended)", "Archive without syncing"
    - If already synced: "Archive now", "Sync anyway", "Cancel"
 
-   If user chooses sync, use Task tool (subagent_type: "general-purpose", prompt: "Use Skill tool to invoke openspec-sync-specs for change '<name>'. Delta spec analysis: <include the analyzed delta spec summary>"). Proceed to archive regardless of choice.
+   If user chooses sync, use Task tool (subagent_type: "general-purpose", prompt: "Use Skill tool to invoke openspec-sync-specs for change '<name>'. Delta spec analysis: <include the analyzed delta spec summary>. Ensure each capability gets both spec.md and design.md on the main specs side."). Proceed to archive regardless of choice.
 
 5. **Perform the archive**
 
@@ -102,7 +106,7 @@ Archive a completed change in the experimental workflow.
 **Change:** <change-name>
 **Schema:** <schema-name>
 **Archived to:** the archive path derived from `planningHome.changesDir`/YYYY-MM-DD-<name>/
-**Specs:** ✓ Synced to main specs (or "No delta specs" or "Sync skipped")
+**Specs:** ✓ Synced to main specs (spec.md + design.md companions) (or "No delta specs" or "Sync skipped")
 
 All artifacts complete. All tasks complete.
 ```

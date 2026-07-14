@@ -112,12 +112,41 @@ Common artifact patterns:
 
 **spec-driven schema** (proposal → specs → design → tasks):
 - **proposal.md**: Ask user about the change if not clear. Fill in Why, What Changes, Capabilities, Impact.
-  - The Capabilities section is critical - each capability listed will need a spec file.
-- **specs/<capability>/spec.md**: Create one spec per capability listed in the proposal's Capabilities section (use the capability name, not the change name).
-- **design.md**: Document technical decisions, architecture, and implementation approach.
+  - The Capabilities section is critical - each capability listed will need a **spec + design pair**.
+  - **Owns:** 为什么做、做什么、影响谁、能力清单。短、偏产品/范围。
+  - **Does NOT own:** 文件结构、类型定义、节点图、接口签名（那些属于 design）。
+- **specs/<capability>/spec.md**: Create one delta spec per capability listed in the proposal's Capabilities section (use the capability name, not the change name).
+  - **Owns:** 可验证行为（SHALL + Scenario）。不写实现结构。
+- **specs/<capability>/design.md** (**REQUIRED companion**): When creating or updating a capability's `spec.md`, **always create/update** `specs/<capability>/design.md` in the same step. Do not leave a capability with only `spec.md`.
+  - **Owns (module SSOT):** 该模块的职责边界、文件结构、关键类型/接口、模块内算法/状态机、与邻接模块的**接口契约**。
+  - If main `openspec/specs/<capability>/design.md` already exists, read it first; in a **change**, prefer a short **delta** section ("本次对该模块设计的变更") plus pointers, or a full updated draft only when the module design itself is being rewritten.
+- **design.md** (change-level): Document **cross-cutting** technical decisions only.
+  - **Owns:** 跨模块取舍、迁移步骤、共享约束、能力之间的协作关系。用链接/能力名引用模块，**不要**复制各模块的文件树或类型全文。
 - **tasks.md**: Break down implementation into checkboxed tasks.
 
-For other schemas, follow the `instruction` field from the CLI output.
+**Anti-duplication (SSOT — one fact, one home):**
+
+| 内容 | 权威位置 | 其它文档怎么写 |
+|------|----------|----------------|
+| Why / 范围 / 非目标 / 能力清单 | `proposal.md` | change-level design 只写 "见 proposal"；模块 design 不重复 Why |
+| 跨模块决策、迁移、共享约束 | change-level `design.md` | 模块 design 用一句话 + 决策 ID 引用（如 "见 change design D1"） |
+| 模块职责、文件结构、类型、内部状态机 | `specs/<capability>/design.md` | change design 只列模块名 + 一句话影响，不贴长代码 |
+| 可验证行为 / 场景 | `specs/<capability>/spec.md` | design 不写 WHEN/THEN；proposal 不写 SHALL 场景 |
+| Purpose 一句话 | `spec.md` Purpose | 模块 design「职责」可有一句等价摘要，**禁止**把 Purpose 扩成第二份需求 |
+
+**Hard rules:**
+- 若两处出现同一段 >5 行的结构说明或类型定义 → 删掉非权威处，改为链接到权威文件。
+- change-level `design.md` 的 Decisions 写「选了什么、为什么」；「改哪些文件/类型」落在对应 `specs/<cap>/design.md`。
+- proposal 的 What Changes 用子弹列表；细节实现放到 design，不在 proposal 展开。
+
+**Per-capability design companion rule (always):**
+```
+specs/<capability>/spec.md     ← requirements / scenarios
+specs/<capability>/design.md   ← module design SSOT (MUST with the spec)
+proposal.md                    ← why / scope / capabilities
+design.md (change)             ← cross-cutting decisions only
+```
+Never finish the `specs` artifact while any listed capability is missing `design.md`.
 
 **Guardrails**
 - Create ONE artifact per invocation
