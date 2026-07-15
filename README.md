@@ -31,6 +31,10 @@ powershell -NoProfile -File scripts/tests/WorkflowDeploy.Tests.ps1
 
 ## Docs
 
+Current (authoritative):
+
 - [docs/workflow-v2-redesign.md](docs/workflow-v2-redesign.md)
 - [docs/ssot.md](docs/ssot.md)
 - [docs/BREAKING.md](docs/BREAKING.md)
+
+v1 redesign drafts, integration writeups, `compat/`, `versions.conf`, and `manifest.template.json` were removed to avoid conflicting guidance.
