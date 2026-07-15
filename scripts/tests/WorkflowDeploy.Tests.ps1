@@ -61,9 +61,19 @@ try {
   Assert-True (Test-Path (Join-Path $proj 'openspec\specs\keep-me\spec.md')) "preserves business specs"
   Assert-True (Test-Path (Join-Path $proj '.cursor\workflow\pack\prompts\apply.md')) "installs apply prompt"
 
+  # business capability must be paired for doctor; preserve both files across install
+  Set-Content (Join-Path $proj 'openspec\specs\keep-me\design.md') 'business design stays'
   $r2 = Invoke-WorkflowDoctor -ProjectRoot $proj
   if ($r2.ExitCode -ne 0) { $r2.Errors | ForEach-Object { Write-Host "  doctor: $_" } }
   Assert-True ($r2.ExitCode -eq 0) "doctor passes after install"
+  Assert-True (Test-Path (Join-Path $proj 'openspec\specs\keep-me\design.md')) "preserves business design"
+
+  # unpaired main spec → doctor fails
+  Remove-Item -Force (Join-Path $proj 'openspec\specs\keep-me\design.md')
+  $rPair = Invoke-WorkflowDoctor -ProjectRoot $proj
+  Assert-True ($rPair.ExitCode -ne 0) "doctor fails when design.md missing"
+  Assert-True (($rPair.Errors -join ' ') -match 'design\.md') "doctor mentions missing design.md"
+  Set-Content (Join-Path $proj 'openspec\specs\keep-me\design.md') 'business design stays'
 
   # reintroduce legacy → doctor fails
   New-Item -ItemType Directory -Force -Path (Join-Path $proj '.cursor\skills\superpowers-v9') | Out-Null

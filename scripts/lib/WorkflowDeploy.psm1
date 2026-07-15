@@ -91,7 +91,16 @@ function Get-WorkflowManifestFiles {
     '.cursor/workflow/pack/gates/verify.md',
     '.cursor/workflow/pack/gates/debug.md',
     '.cursor/rules/workflow-router.mdc',
+    '.cursor/commands/opsx-explore.md',
+    '.cursor/commands/opsx-new.md',
+    '.cursor/commands/opsx-ff.md',
+    '.cursor/commands/opsx-continue.md',
+    '.cursor/commands/opsx-grill.md',
     '.cursor/commands/opsx-apply.md',
+    '.cursor/commands/opsx-verify.md',
+    '.cursor/commands/opsx-sync.md',
+    '.cursor/commands/opsx-archive.md',
+    '.cursor/commands/opsx-doctor.md',
     'openspec/schemas/workflow-spec/schema.yaml',
     'openspec/config.yaml',
     '.cursor/workflow/version.json',
@@ -197,6 +206,43 @@ function Install-WorkflowV2 {
   Write-WorkflowMetadata -ProjectRoot $TargetRoot
 }
 
+function Get-WorkflowSpecPairErrors {
+  param(
+    [Parameter(Mandatory)][string]$ProjectRoot
+  )
+  $errors = New-Object System.Collections.Generic.List[string]
+  $roots = New-Object System.Collections.Generic.List[string]
+  $main = Join-Path $ProjectRoot 'openspec/specs'
+  if (Test-Path $main) { $roots.Add($main) }
+
+  $changes = Join-Path $ProjectRoot 'openspec/changes'
+  if (Test-Path $changes) {
+    Get-ChildItem -Path $changes -Directory -ErrorAction SilentlyContinue |
+      Where-Object { $_.Name -ne 'archive' } |
+      ForEach-Object {
+        $capRoot = Join-Path $_.FullName 'specs'
+        if (Test-Path $capRoot) { $roots.Add($capRoot) }
+      }
+  }
+
+  foreach ($root in $roots) {
+    Get-ChildItem -Path $root -Directory -ErrorAction SilentlyContinue | ForEach-Object {
+      $spec = Join-Path $_.FullName 'spec.md'
+      $design = Join-Path $_.FullName 'design.md'
+      $relBase = $_.FullName.Substring($ProjectRoot.Length).TrimStart('\', '/')
+      $hasSpec = Test-Path $spec
+      $hasDesign = Test-Path $design
+      if ($hasSpec -and -not $hasDesign) {
+        $errors.Add("spec/design pair incomplete: $relBase/design.md missing")
+      }
+      elseif ($hasDesign -and -not $hasSpec) {
+        $errors.Add("spec/design pair incomplete: $relBase/spec.md missing")
+      }
+    }
+  }
+  return $errors.ToArray()
+}
+
 function Invoke-WorkflowDoctor {
   param([Parameter(Mandatory)][string]$ProjectRoot)
   $ProjectRoot = (Resolve-Path $ProjectRoot).Path
@@ -242,6 +288,10 @@ function Invoke-WorkflowDoctor {
   $bootDir = Join-Path $ProjectRoot '.cursor/rules/superpowers-v6.1.1'
   if (Test-Path $bootDir) {
     $errors.Add('legacy rules dir present: .cursor/rules/superpowers-v6.1.1')
+  }
+
+  foreach ($e in (Get-WorkflowSpecPairErrors -ProjectRoot $ProjectRoot)) {
+    $errors.Add($e)
   }
 
   # schema resolution: prefer openspec CLI when available
@@ -322,5 +372,6 @@ Export-ModuleMember -Function @(
   'Write-WorkflowMetadata',
   'Install-WorkflowV2',
   'Invoke-WorkflowDoctor',
+  'Get-WorkflowSpecPairErrors',
   'Write-WorkflowState'
 )

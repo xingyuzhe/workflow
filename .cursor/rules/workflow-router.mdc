@@ -1,10 +1,10 @@
 ---
-description: Workflow v2 router — command/intent to pack prompts
+description: Workflow router — map commands and intents to pack prompts
 globs:
 alwaysApply: true
 ---
 
-# Workflow Router (v2)
+# Workflow Router
 
 <SUBAGENT-STOP>
 If you were dispatched as a subagent to execute a specific task, ignore this router. Follow the instructions you were given.
@@ -12,7 +12,7 @@ If you were dispatched as a subagent to execute a specific task, ignore this rou
 
 **Pack root:** `.cursor/workflow/pack/`
 
-Before acting on workflow intents, **read the mapped prompt** (and gates when apply). Do not scan Superpowers/OpenSpec skill trees for primary lifecycle actions.
+Before acting on workflow intents, **read the mapped prompt** (and gates when apply). Lifecycle work is driven by `/opsx:*` commands and these pack files — not by scanning skill directories.
 
 | User / command | Load |
 |----------------|------|
@@ -20,7 +20,7 @@ Before acting on workflow intents, **read the mapped prompt** (and gates when ap
 | `/opsx:new` / new change | `pack/prompts/new.md` + `branch.md` |
 | `/opsx:ff` | `pack/prompts/ff.md` + `branch.md` |
 | `/opsx:continue` | `pack/prompts/continue.md` |
-| grill / design review | `pack/prompts/grill.md` |
+| `/opsx:grill` / design review | `pack/prompts/grill.md` |
 | `/opsx:apply` / implement / start coding | `pack/prompts/apply.md` + `pack/gates/*` |
 | `/opsx:verify` | `pack/prompts/verify.md` |
 | `/opsx:sync` | `pack/prompts/sync.md` |

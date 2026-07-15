@@ -132,7 +132,7 @@ pwsh -File scripts/doctor.ps1 -ProjectRoot path\to\project
 
 ## 健康检查
 
-Doctor 校验：manifest 所列文件、router、schema 文件、**`openspec schema which workflow-spec` 解析到项目本地**、以及不得残留上述工作流 skill 命名空间。
+Doctor 校验：manifest 所列文件、router、schema 文件、**`openspec schema which workflow-spec` 解析到项目本地**、工作流 skill 命名空间不得残留，以及 **`openspec/specs`（与未归档 change 的 `specs/`）下每个 capability 必须 `spec.md`+`design.md` 成对**。
 
 ---
 

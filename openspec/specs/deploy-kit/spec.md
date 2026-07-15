@@ -29,7 +29,7 @@ Init SHALL overwrite `openspec/config.yaml` with the workflow-shipped template (
 - **THEN** init MUST replace it entirely with the workflow template
 
 ### Requirement: Doctor fails on legacy residue
-Doctor SHALL check pack presence, router presence, **project-local `workflow-spec` schema resolution** (via `openspec schema which` when the CLI is available), version/manifest consistency, and absence of purged workflow legacy skill trees. Residual v1 workflow skills under the purge namespaces SHALL cause doctor to **fail** (non-zero). Incomplete pack SHALL fail. If the OpenSpec CLI cannot be found, doctor SHALL fail with an actionable message (schema resolution unverifiable).
+Doctor SHALL check pack presence, router presence, **project-local `workflow-spec` schema resolution** (via `openspec schema which` when the CLI is available), version/manifest consistency, absence of purged workflow legacy skill trees, and **spec/design pairing**. For every capability directory under `openspec/specs/` and under non-archive `openspec/changes/*/specs/`, if either `spec.md` or `design.md` exists, both MUST exist; otherwise doctor SHALL fail. Residual v1 workflow skills under the purge namespaces SHALL cause doctor to **fail** (non-zero). Incomplete pack SHALL fail. If the OpenSpec CLI cannot be found, doctor SHALL fail with an actionable message (schema resolution unverifiable).
 
 #### Scenario: Missing apply prompt
 - **WHEN** doctor runs and `.cursor/workflow/pack/prompts/apply.md` is missing
@@ -42,6 +42,10 @@ Doctor SHALL check pack presence, router presence, **project-local `workflow-spe
 #### Scenario: Schema resolves from project
 - **WHEN** doctor runs and the OpenSpec CLI is available
 - **THEN** `openspec schema which workflow-spec` MUST resolve to the project's `openspec/schemas/workflow-spec` (source project, not package)
+
+#### Scenario: Missing companion design
+- **WHEN** `openspec/specs/foo/spec.md` exists and `openspec/specs/foo/design.md` does not
+- **THEN** doctor MUST fail with an error identifying the incomplete pair
 
 ### Requirement: Version and manifest metadata
 Deploy SHALL write `.cursor/workflow/version.json` and `.cursor/workflow/manifest.json`. Doctor SHALL use them when validating. Init SHALL run doctor after deploy and MUST exit non-zero if doctor fails.
