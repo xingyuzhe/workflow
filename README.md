@@ -7,9 +7,11 @@
 需要 `-Yes`（会覆盖工作流相关文件与 `openspec/config.yaml`）。说明见 [docs/BREAKING.md](docs/BREAKING.md)。
 
 ```powershell
-pwsh -File scripts/init.ps1 -Target path\to\project -Yes
-pwsh -File scripts/doctor.ps1 -ProjectRoot path\to\project
+pwsh -File scripts/init.ps1 -Target D:\work\your-project -Yes
+pwsh -File scripts/doctor.ps1 -ProjectRoot D:\work\your-project
 ```
+
+也支持 Git Bash 风格路径（会规范成 Windows 路径），例如 `-Target /d/work/your-project` → `D:\work\your-project`。
 
 ## 目录要点
 

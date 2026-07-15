@@ -10,6 +10,7 @@ $ErrorActionPreference = 'Stop'
 $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 Import-Module (Join-Path $scriptDir 'lib/WorkflowDeploy.psm1') -Force
 
+$ProjectRoot = Resolve-WorkflowPath -Path $ProjectRoot
 $result = Invoke-WorkflowDoctor -ProjectRoot $ProjectRoot
 if ($result.ExitCode -eq 0) {
   Write-Host "Doctor OK: $ProjectRoot" -ForegroundColor Green

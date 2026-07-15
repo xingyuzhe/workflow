@@ -75,6 +75,12 @@ try {
   Assert-True (($rPair.Errors -join ' ') -match 'design\.md') "doctor mentions missing design.md"
   Set-Content (Join-Path $proj 'openspec\specs\keep-me\design.md') 'business design stays'
 
+  # Git Bash style paths must map to Windows drive roots
+  Assert-True ((Resolve-WorkflowPath '/d/work/bill') -eq 'D:\work\bill') "maps /d/work/bill to D:\work\bill"
+  Assert-True ((Resolve-WorkflowPath '/c/Users/wps') -eq 'C:\Users\wps') "maps /c/Users/wps"
+  Assert-True ((Resolve-WorkflowPath 'D:/work/bill') -eq 'D:\work\bill') "normalizes D:/work/bill"
+  Assert-True ((Resolve-WorkflowPath 'D:\work\bill') -eq 'D:\work\bill') "keeps Windows path"
+
   # reintroduce legacy → doctor fails
   New-Item -ItemType Directory -Force -Path (Join-Path $proj '.cursor\skills\superpowers-v9') | Out-Null
   $r3 = Invoke-WorkflowDoctor -ProjectRoot $proj

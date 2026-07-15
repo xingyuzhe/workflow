@@ -21,15 +21,21 @@ if (-not $Yes) {
 }
 
 $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
+Import-Module (Join-Path $scriptDir 'lib/WorkflowDeploy.psm1') -Force
+
+$Target = Resolve-WorkflowPath -Path $Target
 if (-not $Source) {
   $Source = Split-Path -Parent $scriptDir
 }
-Import-Module (Join-Path $scriptDir 'lib/WorkflowDeploy.psm1') -Force
+$Source = Resolve-WorkflowPath -Path $Source
 
-Write-Host "Workflow v2 init"
+if (-not (Test-Path -LiteralPath $Target)) {
+  Write-Host "Target does not exist yet; will create: $Target" -ForegroundColor Yellow
+}
+
+Write-Host "Workflow init"
 Write-Host "  Source: $Source"
 Write-Host "  Target: $Target"
-
 Install-WorkflowV2 -SourceRoot $Source -TargetRoot $Target
 
 $doctor = Invoke-WorkflowDoctor -ProjectRoot $Target
@@ -39,5 +45,5 @@ if ($doctor.ExitCode -ne 0) {
   exit $doctor.ExitCode
 }
 
-Write-Host "Doctor OK. Workflow v2 installed." -ForegroundColor Green
+Write-Host "Doctor OK. Workflow installed at: $Target" -ForegroundColor Green
 exit 0

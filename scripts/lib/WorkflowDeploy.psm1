@@ -2,6 +2,26 @@
 
 $script:WorkflowVersion = '2.0.0'
 
+function Resolve-WorkflowPath {
+  param([Parameter(Mandatory)][string]$Path)
+  $p = $Path.Trim().Trim('"').Trim("'")
+  # Git Bash / MSYS: /d/work/bill -> D:\work\bill
+  if ($p -match '^/([a-zA-Z])/(.*)$') {
+    $drive = $Matches[1].ToUpperInvariant()
+    $rest = ($Matches[2] -replace '/', '\')
+    $p = "${drive}:\$rest"
+  }
+  elseif ($p -match '^([a-zA-Z]):/(.*)$') {
+    $drive = $Matches[1].ToUpperInvariant()
+    $rest = ($Matches[2] -replace '/', '\')
+    $p = "${drive}:\$rest"
+  }
+  elseif ($p -match '^([a-zA-Z]):\\') {
+    $p = $p.Substring(0, 1).ToUpperInvariant() + $p.Substring(1)
+  }
+  return [System.IO.Path]::GetFullPath($p)
+}
+
 function Get-WorkflowNamespaceSkillDirs {
   param([Parameter(Mandatory)][string]$SkillsRoot)
   if (-not (Test-Path $SkillsRoot)) { return @() }
@@ -130,11 +150,16 @@ function Install-WorkflowV2 {
     [Parameter(Mandatory)][string]$SourceRoot,
     [Parameter(Mandatory)][string]$TargetRoot
   )
-  $SourceRoot = (Resolve-Path $SourceRoot).Path
-  if (-not (Test-Path $TargetRoot)) {
+  $SourceRoot = Resolve-WorkflowPath -Path $SourceRoot
+  $TargetRoot = Resolve-WorkflowPath -Path $TargetRoot
+  if (-not (Test-Path -LiteralPath $SourceRoot)) {
+    throw "Source root not found: $SourceRoot"
+  }
+  if (-not (Test-Path -LiteralPath $TargetRoot)) {
     New-Item -ItemType Directory -Force -Path $TargetRoot | Out-Null
   }
-  $TargetRoot = (Resolve-Path $TargetRoot).Path
+  $SourceRoot = (Resolve-Path -LiteralPath $SourceRoot).Path
+  $TargetRoot = (Resolve-Path -LiteralPath $TargetRoot).Path
   $self = ($SourceRoot -eq $TargetRoot)
 
   Remove-WorkflowNamespaceSkills -SkillsRoot (Join-Path $TargetRoot '.cursor/skills')
@@ -245,7 +270,14 @@ function Get-WorkflowSpecPairErrors {
 
 function Invoke-WorkflowDoctor {
   param([Parameter(Mandatory)][string]$ProjectRoot)
-  $ProjectRoot = (Resolve-Path $ProjectRoot).Path
+  $ProjectRoot = Resolve-WorkflowPath -Path $ProjectRoot
+  if (-not (Test-Path -LiteralPath $ProjectRoot)) {
+    return [pscustomobject]@{
+      ExitCode = 1
+      Errors   = @("project root not found: $ProjectRoot")
+    }
+  }
+  $ProjectRoot = (Resolve-Path -LiteralPath $ProjectRoot).Path
   $errors = New-Object System.Collections.Generic.List[string]
 
   foreach ($rel in (Get-WorkflowManifestFiles)) {
@@ -364,6 +396,7 @@ function Write-WorkflowState {
 }
 
 Export-ModuleMember -Function @(
+  'Resolve-WorkflowPath',
   'Get-WorkflowNamespaceSkillDirs',
   'Remove-WorkflowNamespaceSkills',
   'Remove-WorkflowOwnedEntries',
