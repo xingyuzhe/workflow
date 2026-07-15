@@ -1,0 +1,3 @@
+# Project-private OpenSpec config. Init never overwrites this file.
+# Add rules/schema here; re-run init to regenerate config.yaml.
+rules: {}

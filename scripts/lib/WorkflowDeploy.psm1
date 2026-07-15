@@ -122,10 +122,191 @@ function Get-WorkflowManifestFiles {
     '.cursor/commands/opsx-archive.md',
     '.cursor/commands/opsx-doctor.md',
     'openspec/schemas/workflow-spec/schema.yaml',
+    'openspec/config.workflow.yaml',
+    'openspec/config.project.yaml',
     'openspec/config.yaml',
     '.cursor/workflow/version.json',
     '.cursor/workflow/manifest.json'
   )
+}
+
+function Read-WorkflowUtf8Text {
+  param([Parameter(Mandatory)][string]$Path)
+  return [System.IO.File]::ReadAllText($Path, [System.Text.UTF8Encoding]::new($false))
+}
+
+function Write-WorkflowUtf8Text {
+  param(
+    [Parameter(Mandatory)][string]$Path,
+    [Parameter(Mandatory)][string]$Text
+  )
+  $dir = Split-Path -Parent $Path
+  if ($dir -and -not (Test-Path $dir)) {
+    New-Item -ItemType Directory -Force -Path $dir | Out-Null
+  }
+  # UTF-8 with BOM helps Windows PowerShell 5.1 round-trip Chinese safely
+  [System.IO.File]::WriteAllText($Path, $Text, [System.Text.UTF8Encoding]::new($true))
+}
+
+function ConvertFrom-WorkflowOpenSpecConfigText {
+  param([Parameter(Mandatory)][string]$Text)
+  $schema = $null
+  $rules = [ordered]@{}
+  $currentKey = $null
+  $inRules = $false
+  foreach ($line in ($Text -split "`r?`n")) {
+    $t = $line.TrimEnd()
+    $trim = $t.Trim()
+    if ($trim -eq '' -or $trim.StartsWith('#')) { continue }
+    if ($trim -match '^schema:\s*(.+)$') {
+      $schema = $Matches[1].Trim().Trim('"').Trim("'")
+      continue
+    }
+    if ($trim -eq 'rules:' -or $trim -match '^rules:\s*\{\s*\}\s*$') {
+      $inRules = $true
+      $currentKey = $null
+      continue
+    }
+    if (-not $inRules) { continue }
+    if ($trim -match '^([A-Za-z0-9_-]+):\s*$') {
+      $currentKey = $Matches[1]
+      if (-not $rules.Contains($currentKey)) {
+        $rules[$currentKey] = New-Object System.Collections.Generic.List[string]
+      }
+      continue
+    }
+    if ($currentKey -and $trim -match '^-\s+(.+)$') {
+      $item = $Matches[1].Trim()
+      if (($item.StartsWith('"') -and $item.EndsWith('"')) -or ($item.StartsWith("'") -and $item.EndsWith("'"))) {
+        $item = $item.Substring(1, $item.Length - 2)
+      }
+      [void]$rules[$currentKey].Add($item)
+    }
+  }
+  return [pscustomobject]@{ Schema = $schema; Rules = $rules }
+}
+
+function Write-WorkflowOpenSpecConfigFile {
+  param(
+    [Parameter(Mandatory)][string]$Path,
+    [string]$Schema,
+    [Parameter(Mandatory)]$Rules,
+    [switch]$Generated
+  )
+  $sb = New-Object System.Text.StringBuilder
+  if ($Generated) {
+    [void]$sb.AppendLine('# AUTO-GENERATED - DO NOT EDIT.')
+    [void]$sb.AppendLine('# Edit openspec/config.workflow.yaml / openspec/config.project.yaml, then re-run init.')
+    [void]$sb.AppendLine('')
+  }
+  if ($Schema) {
+    [void]$sb.AppendLine("schema: $Schema")
+    [void]$sb.AppendLine('')
+  }
+  [void]$sb.AppendLine('rules:')
+  $keys = @($Rules.Keys)
+  if ($keys.Count -eq 0) {
+    [void]$sb.AppendLine('  {}')
+  }
+  else {
+    foreach ($k in $keys) {
+      [void]$sb.AppendLine("  ${k}:")
+      foreach ($item in @($Rules[$k])) {
+        [void]$sb.AppendLine("    - $item")
+      }
+    }
+  }
+  Write-WorkflowUtf8Text -Path $Path -Text (($sb.ToString().TrimEnd()) + "`n")
+}
+
+function Merge-WorkflowOpenSpecConfig {
+  param(
+    [Parameter(Mandatory)][string]$WorkflowPath,
+    [string]$ProjectPath,
+    [Parameter(Mandatory)][string]$OutPath
+  )
+  if (-not (Test-Path -LiteralPath $WorkflowPath)) {
+    throw "Workflow config missing: $WorkflowPath"
+  }
+  $wf = ConvertFrom-WorkflowOpenSpecConfigText -Text (Read-WorkflowUtf8Text -Path $WorkflowPath)
+  $proj = $null
+  if ($ProjectPath -and (Test-Path -LiteralPath $ProjectPath)) {
+    $proj = ConvertFrom-WorkflowOpenSpecConfigText -Text (Read-WorkflowUtf8Text -Path $ProjectPath)
+  }
+
+  $schema = $wf.Schema
+  if ($proj -and $proj.Schema) { $schema = $proj.Schema }
+
+  $mergedRules = [ordered]@{}
+  $allKeys = New-Object System.Collections.Generic.List[string]
+  foreach ($k in @($wf.Rules.Keys)) {
+    if (-not $allKeys.Contains($k)) { [void]$allKeys.Add($k) }
+  }
+  if ($proj) {
+    foreach ($k in @($proj.Rules.Keys)) {
+      if (-not $allKeys.Contains($k)) { [void]$allKeys.Add($k) }
+    }
+  }
+  foreach ($k in $allKeys) {
+    $list = New-Object System.Collections.Generic.List[string]
+    $seen = @{}
+    if ($wf.Rules.Contains($k)) {
+      foreach ($item in @($wf.Rules[$k])) {
+        if (-not $seen.ContainsKey($item)) {
+          $seen[$item] = $true
+          [void]$list.Add($item)
+        }
+      }
+    }
+    if ($proj -and $proj.Rules.Contains($k)) {
+      foreach ($item in @($proj.Rules[$k])) {
+        if (-not $seen.ContainsKey($item)) {
+          $seen[$item] = $true
+          [void]$list.Add($item)
+        }
+      }
+    }
+    $mergedRules[$k] = $list
+  }
+
+  Write-WorkflowOpenSpecConfigFile -Path $OutPath -Schema $schema -Rules $mergedRules -Generated
+}
+
+function Install-WorkflowOpenSpecConfigs {
+  param(
+    [Parameter(Mandatory)][string]$SourceRoot,
+    [Parameter(Mandatory)][string]$TargetRoot
+  )
+  $cfgDstDir = Join-Path $TargetRoot 'openspec'
+  New-Item -ItemType Directory -Force -Path $cfgDstDir | Out-Null
+
+  $wfSrc = Join-Path $SourceRoot 'openspec/config.workflow.yaml'
+  if (-not (Test-Path -LiteralPath $wfSrc)) {
+    $legacy = Join-Path $SourceRoot 'openspec/config.yaml'
+    if (Test-Path -LiteralPath $legacy) { $wfSrc = $legacy }
+    else { throw "Missing openspec/config.workflow.yaml in source: $SourceRoot" }
+  }
+  $wfDst = Join-Path $cfgDstDir 'config.workflow.yaml'
+  $wfSrcFull = (Resolve-Path -LiteralPath $wfSrc).Path
+  $wfDstFull = [System.IO.Path]::GetFullPath($wfDst)
+  if ($wfSrcFull -ne $wfDstFull) {
+    Copy-Item -LiteralPath $wfSrc -Destination $wfDst -Force
+  }
+  $projDst = Join-Path $cfgDstDir 'config.project.yaml'
+  $cfgDst = Join-Path $cfgDstDir 'config.yaml'
+  if (-not (Test-Path -LiteralPath $projDst) -and (Test-Path -LiteralPath $cfgDst)) {
+    Move-Item -LiteralPath $cfgDst -Destination $projDst -Force
+  }
+  if (-not (Test-Path -LiteralPath $projDst)) {
+    $shell = @(
+      '# Project-private OpenSpec config. Init never overwrites this file.',
+      '# Add rules/schema here; re-run init to regenerate config.yaml.',
+      'rules: {}'
+    ) -join "`n"
+    Write-WorkflowUtf8Text -Path $projDst -Text ($shell + "`n")
+  }
+
+  Merge-WorkflowOpenSpecConfig -WorkflowPath $wfDst -ProjectPath $projDst -OutPath $cfgDst
 }
 
 function Write-WorkflowMetadata {
@@ -207,11 +388,6 @@ function Install-WorkflowV2 {
       -Source (Join-Path $SourceRoot 'openspec/schemas/workflow-spec') `
       -Destination (Join-Path $TargetRoot 'openspec/schemas/workflow-spec')
 
-    $cfgSrc = Join-Path $SourceRoot 'openspec/config.yaml'
-    $cfgDstDir = Join-Path $TargetRoot 'openspec'
-    New-Item -ItemType Directory -Force -Path $cfgDstDir | Out-Null
-    Copy-Item -LiteralPath $cfgSrc -Destination (Join-Path $cfgDstDir 'config.yaml') -Force
-
     $scriptsDst = Join-Path $TargetRoot 'scripts'
     New-Item -ItemType Directory -Force -Path $scriptsDst | Out-Null
     foreach ($name in @('init.ps1', 'doctor.ps1')) {
@@ -228,6 +404,7 @@ function Install-WorkflowV2 {
     }
   }
 
+  Install-WorkflowOpenSpecConfigs -SourceRoot $SourceRoot -TargetRoot $TargetRoot
   Write-WorkflowMetadata -ProjectRoot $TargetRoot
 }
 
@@ -326,6 +503,14 @@ function Invoke-WorkflowDoctor {
     $errors.Add($e)
   }
 
+  $mergedCfg = Join-Path $ProjectRoot 'openspec/config.yaml'
+  if (Test-Path -LiteralPath $mergedCfg) {
+    $cfgRaw = Get-Content -Raw -LiteralPath $mergedCfg
+    if ($cfgRaw -notmatch '(?m)^schema:\s*\S') {
+      $errors.Add('openspec/config.yaml missing schema: (expected merged OpenSpec config)')
+    }
+  }
+
   # schema resolution: prefer openspec CLI when available
   $schemaYaml = Join-Path $ProjectRoot 'openspec/schemas/workflow-spec/schema.yaml'
   if (-not (Test-Path $schemaYaml)) {
@@ -403,6 +588,8 @@ Export-ModuleMember -Function @(
   'Copy-WorkflowTree',
   'Get-WorkflowManifestFiles',
   'Write-WorkflowMetadata',
+  'Merge-WorkflowOpenSpecConfig',
+  'Install-WorkflowOpenSpecConfigs',
   'Install-WorkflowV2',
   'Invoke-WorkflowDoctor',
   'Get-WorkflowSpecPairErrors',

@@ -39,7 +39,9 @@ doctor.ps1
 workflow/
 ├── openspec/
 │   ├── schemas/workflow-spec/     # 项目级 schema（浅 fork spec-driven）
-│   ├── config.yaml                # 默认 schema + SSOT/配对规则（init 会整文件覆盖目标）
+│   ├── config.workflow.yaml       # 工作流模板（init 可覆盖）
+│   ├── config.project.yaml        # 项目私有（init 永不覆盖）
+│   ├── config.yaml                # 合并产物（CLI 只读；自动重生成）
 │   ├── specs/                     # 本产品自身的主规格
 │   └── changes/                   # 变更与 archive
 ├── .cursor/
@@ -96,7 +98,7 @@ workflow/
 ### Schema 与产物
 
 - 默认 schema 名：`workflow-spec`（`openspec/schemas/workflow-spec/`）
-- 每个 capability：同批产出 `spec.md` + `design.md`（靠 schema 模板说明 + `config.yaml` rules + prompts；非 CLI 文件系统硬校验）
+- 每个 capability：同批产出 `spec.md` + `design.md`（靠 schema 模板说明 + 合并后的 `config.yaml` rules + prompts；非 CLI 文件系统硬校验）
 - Artifact 归属见 [ssot.md](ssot.md)
 
 ### 状态文件
@@ -120,11 +122,21 @@ pwsh -File scripts/doctor.ps1 -ProjectRoot path\to\project
 1. 清除目标项目中工作流命名空间下的 `.cursor/skills`（`superpowers*` / `openspec*` / `grilling*` / `workflow*`）
 2. 删除并重装工作流入口（`opsx-*`、旧工作流 rules 目录等）
 3. 同步 pack、router、commands、`workflow-spec` schema
-4. **整文件覆盖** `openspec/config.yaml`
+4. 覆盖 `openspec/config.workflow.yaml`；迁移/保留 `config.project.yaml`；合并生成 `config.yaml`
 5. 写入 version / manifest，并跑 doctor（失败则非零退出）
 
-**不会删除**业务规格 `openspec/specs/**`。  
+**不会删除**业务规格 `openspec/specs/**`，也**不会覆盖** `config.project.yaml`。  
 破坏性细节见 [BREAKING.md](BREAKING.md)。
+
+### 配置隔离
+
+| 文件 | 归属 | 升级时 |
+|------|------|--------|
+| `config.workflow.yaml` | workflow | 可覆盖 |
+| `config.project.yaml` | 本项目 | 永不覆盖 |
+| `config.yaml` | 合并产物 | 自动重生成 |
+
+rules 按 artifact 键拼接（workflow 在前、project 在后、去重保序）；`schema` 等标量以 workflow 为基，project 显式提供则覆盖。
 
 本仓自举：源路径与目标路径相同时，不会先删后拷毁掉现有 pack。
 

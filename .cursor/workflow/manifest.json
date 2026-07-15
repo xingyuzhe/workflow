@@ -28,6 +28,8 @@
                   ".cursor/commands/opsx-archive.md",
                   ".cursor/commands/opsx-doctor.md",
                   "openspec/schemas/workflow-spec/schema.yaml",
+                  "openspec/config.workflow.yaml",
+                  "openspec/config.project.yaml",
                   "openspec/config.yaml",
                   ".cursor/workflow/version.json",
                   ".cursor/workflow/manifest.json"

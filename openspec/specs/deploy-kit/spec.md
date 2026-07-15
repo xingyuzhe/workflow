@@ -21,13 +21,20 @@ Init SHALL unconditionally remove workflow-namespace skill trees under `.cursor/
 - **WHEN** init runs and old `opsx-*` command files exist
 - **THEN** those files MUST be removed and replaced by the current v2 command set
 
-### Requirement: Overwrite openspec config template
-Init SHALL overwrite `openspec/config.yaml` with the workflow-shipped template (schema default `workflow-spec` and SSOT/pair rules). Init SHALL NOT merge with a pre-existing config. Init SHALL NOT delete business `openspec/specs/**` content.
+### Requirement: Isolate and merge openspec config
+Init SHALL overwrite `openspec/config.workflow.yaml` with the workflow-shipped template (schema default `workflow-spec` and SSOT/pair rules). Init SHALL NEVER overwrite `openspec/config.project.yaml`. Init SHALL regenerate `openspec/config.yaml` by merging workflow + project configs. Rules SHALL merge per artifact key (workflow items first, then project, dedupe preserving order). Scalar fields such as `schema` SHALL use workflow as the base; an explicit project scalar SHALL override. When `config.project.yaml` is absent and a legacy `config.yaml` exists, init SHALL rename that file to `config.project.yaml` before writing the workflow template and regenerating the merge. When no project file exists after migration, init SHALL write a minimal empty project shell. Init SHALL NOT delete business `openspec/specs/**` content.
 
-#### Scenario: Existing custom config
-- **WHEN** the target already has `openspec/config.yaml`
-- **THEN** init MUST replace it entirely with the workflow template
+#### Scenario: Existing custom config migrates once
+- **WHEN** the target has `openspec/config.yaml` but no `config.project.yaml`
+- **THEN** init MUST rename the existing file to `config.project.yaml`, write `config.workflow.yaml`, and regenerate merged `config.yaml` that still contains the previous project rules
 
+#### Scenario: Project config never overwritten
+- **WHEN** `openspec/config.project.yaml` already exists and init runs twice
+- **THEN** the project file content MUST remain unchanged across both runs while `config.workflow.yaml` and merged `config.yaml` MAY be refreshed
+
+#### Scenario: Business specs preserved
+- **WHEN** init runs on a project with existing `openspec/specs/**`
+- **THEN** those business specs MUST remain
 ### Requirement: Doctor fails on legacy residue
 Doctor SHALL check pack presence, router presence, **project-local `workflow-spec` schema resolution** (via `openspec schema which` when the CLI is available), version/manifest consistency, absence of purged workflow legacy skill trees, and **spec/design pairing**. For every capability directory under `openspec/specs/` and under non-archive `openspec/changes/*/specs/`, if either `spec.md` or `design.md` exists, both MUST exist; otherwise doctor SHALL fail. Residual v1 workflow skills under the purge namespaces SHALL cause doctor to **fail** (non-zero). Incomplete pack SHALL fail. If the OpenSpec CLI cannot be found, doctor SHALL fail with an actionable message (schema resolution unverifiable).
 

@@ -4,7 +4,7 @@
 
 ## 安装到项目
 
-需要 `-Yes`（会覆盖工作流相关文件与 `openspec/config.yaml`）。说明见 [docs/BREAKING.md](docs/BREAKING.md)。
+需要 `-Yes`（会覆盖工作流入口与 `openspec/config.workflow.yaml`，并重生成合并后的 `config.yaml`；**不**覆盖 `config.project.yaml`）。说明见 [docs/BREAKING.md](docs/BREAKING.md)。
 
 ```powershell
 pwsh -File scripts/init.ps1 -Target D:\work\your-project -Yes
@@ -19,6 +19,9 @@ pwsh -File scripts/doctor.ps1 -ProjectRoot D:\work\your-project
 |------|------|
 | `.cursor/workflow/pack/` | prompts + gates（源仓与部署同构） |
 | `openspec/schemas/workflow-spec/` | 默认 schema |
+| `openspec/config.workflow.yaml` | 工作流模板规则（init 可覆盖） |
+| `openspec/config.project.yaml` | 项目私有规则（init **永不**覆盖） |
+| `openspec/config.yaml` | 合并产物（CLI 只读；勿手改） |
 | `.cursor/rules/workflow-router.mdc` | 唯一 alwaysApply 路由 |
 | `.cursor/commands/opsx-*.md` | Cursor 命令 |
 | `scripts/init.ps1` · `doctor.ps1` | 部署与健康检查 |

@@ -6,7 +6,9 @@
 ## 文件结构
 ```
 openspec/schemas/workflow-spec/   # SSOT；init 同步到目标同路径
-openspec/config.yaml              # init 整文件覆盖为工作流模板
+openspec/config.workflow.yaml     # 工作流模板；init 可覆盖
+openspec/config.project.yaml      # 项目私有；init 永不覆盖
+openspec/config.yaml              # 合并产物（CLI 读取）
 ```
 
 ## 关键类型 / 接口
@@ -15,7 +17,7 @@ openspec/config.yaml              # init 整文件覆盖为工作流模板
 
 ## 与其它模块的关系
 - runtime / design-review 消费 artifacts
-- deploy-kit 安装 schema 目录并覆盖 config
+- deploy-kit 安装 schema 目录并合并 config
 
 ## 本次变更的设计决策
 - 见 change design D2、D5（config 覆盖）、D9（不删业务 specs）

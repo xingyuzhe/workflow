@@ -81,6 +81,71 @@ try {
   Assert-True ((Resolve-WorkflowPath 'D:/work/bill') -eq 'D:\work\bill') "normalizes D:/work/bill"
   Assert-True ((Resolve-WorkflowPath 'D:\work\bill') -eq 'D:\work\bill') "keeps Windows path"
 
+  # --- config isolation merge ---
+  $cfgDir = Join-Path $tmp 'cfg'
+  New-Item -ItemType Directory -Force -Path $cfgDir | Out-Null
+  $wfOnly = Join-Path $cfgDir 'workflow-only.yaml'
+  $projRules = Join-Path $cfgDir 'project-rules.yaml'
+  $out1 = Join-Path $cfgDir 'out1.yaml'
+  @(
+    'schema: workflow-spec',
+    'rules:',
+    '  proposal:',
+    '    - Own Why only',
+    '  specs:',
+    '    - Both spec and design'
+  ) | Set-Content -Encoding utf8 $wfOnly
+  Merge-WorkflowOpenSpecConfig -WorkflowPath $wfOnly -ProjectPath $null -OutPath $out1
+  $o1 = Get-Content -Raw $out1
+  Assert-True ($o1 -match 'schema:\s*workflow-spec') "merge workflow-only keeps schema"
+  Assert-True ($o1 -match 'Own Why only') "merge workflow-only keeps rules"
+  Assert-True ($o1 -match 'AUTO-GENERATED|DO NOT EDIT') "merged file has generated banner"
+
+  @(
+    'schema: custom-schema',
+    'rules:',
+    '  proposal:',
+    '    - Own Why only',
+    '    - Project private rule',
+    '  design:',
+    '    - Project design rule'
+  ) | Set-Content -Encoding utf8 $projRules
+  $out2 = Join-Path $cfgDir 'out2.yaml'
+  Merge-WorkflowOpenSpecConfig -WorkflowPath $wfOnly -ProjectPath $projRules -OutPath $out2
+  $o2 = Get-Content -Raw $out2
+  Assert-True ($o2 -match 'schema:\s*custom-schema') "project schema overrides"
+  Assert-True ($o2 -match 'Project private rule') "project rules appended"
+  Assert-True (($o2 -split 'Own Why only').Count -eq 2) "dedupes repeated rule text"
+
+  # install: never overwrite project config; migrate bare config.yaml once
+  $proj2 = Join-Path $tmp 'proj2'
+  New-Item -ItemType Directory -Force -Path (Join-Path $proj2 'openspec') | Out-Null
+  @(
+    'schema: old-project',
+    'rules:',
+    '  proposal:',
+    '    - Keep my private rule forever'
+  ) | Set-Content -Encoding utf8 (Join-Path $proj2 'openspec\config.yaml')
+  Install-WorkflowV2 -SourceRoot $repoRoot -TargetRoot $proj2
+  Assert-True (Test-Path (Join-Path $proj2 'openspec\config.workflow.yaml')) "writes config.workflow.yaml"
+  Assert-True (Test-Path (Join-Path $proj2 'openspec\config.project.yaml')) "creates config.project.yaml via migrate"
+  $projCfg1 = Get-Content -Raw (Join-Path $proj2 'openspec\config.project.yaml')
+  Assert-True ($projCfg1 -match 'Keep my private rule forever') "migrated private rule into project file"
+  $merged1 = Get-Content -Raw (Join-Path $proj2 'openspec\config.yaml')
+  Assert-True ($merged1 -match 'Keep my private rule forever') "merged config includes private rule"
+  Assert-True ($merged1 -match 'workflow-spec|Both spec|Own Why|create BOTH|Never leave') "merged includes workflow rules"
+
+  @(
+    'schema: workflow-spec',
+    'rules:',
+    '  proposal:',
+    '    - Keep my private rule forever',
+    '    - Second private line'
+  ) | Set-Content -Encoding utf8 (Join-Path $proj2 'openspec\config.project.yaml')
+  Install-WorkflowV2 -SourceRoot $repoRoot -TargetRoot $proj2
+  $projCfg2 = Get-Content -Raw (Join-Path $proj2 'openspec\config.project.yaml')
+  Assert-True ($projCfg2 -match 'Second private line') "second install does not overwrite project config"
+
   # reintroduce legacy → doctor fails
   New-Item -ItemType Directory -Force -Path (Join-Path $proj '.cursor\skills\superpowers-v9') | Out-Null
   $r3 = Invoke-WorkflowDoctor -ProjectRoot $proj

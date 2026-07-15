@@ -7,6 +7,6 @@
 | 模块结构 / 类型 / 对内接口 | `specs/<capability>/design.md` |
 | 可验证行为 | `specs/<capability>/spec.md` |
 
-规则同时写在 `openspec/config.yaml`（init 会覆盖目标项目中的该文件）与 `workflow-spec` schema 的 instructions 中。
+规则写在 `openspec/config.workflow.yaml`（工作流）与可选的 `openspec/config.project.yaml`（项目私有）；`init` 合并生成 CLI 读取的 `openspec/config.yaml`（勿手改）。`workflow-spec` schema 的 instructions 中也有对应约束。
 
 同一段多行结构/类型内容不要在两个产物里各写一份——保留权威处，其余用链接指向。
