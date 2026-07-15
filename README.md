@@ -21,7 +21,7 @@ pwsh -File scripts/doctor.ps1 -ProjectRoot D:\work\your-project
 | `openspec/schemas/workflow-spec/` | 默认 schema |
 | `openspec/config.workflow.yaml` | 工作流模板规则（init 可覆盖） |
 | `openspec/config.project.yaml` | 项目私有规则（init **永不**覆盖） |
-| `openspec/config.yaml` | 合并产物（CLI 只读；勿手改） |
+| `openspec/config.yaml` | 合并产物（CLI 只读；`doctor`/`init` 自动 sync，勿手改） |
 | `.cursor/rules/workflow-router.mdc` | 唯一 alwaysApply 路由 |
 | `.cursor/commands/opsx-*.md` | Cursor 命令 |
 | `scripts/init.ps1` · `doctor.ps1` | 部署与健康检查 |

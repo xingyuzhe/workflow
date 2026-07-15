@@ -134,7 +134,7 @@ pwsh -File scripts/doctor.ps1 -ProjectRoot path\to\project
 |------|------|--------|
 | `config.workflow.yaml` | workflow | 可覆盖 |
 | `config.project.yaml` | 本项目 | 永不覆盖 |
-| `config.yaml` | 合并产物 | 自动重生成 |
+| `config.yaml` | 合并产物 | `doctor`/`init` 自动重生成 |
 
 rules 按 artifact 键拼接（workflow 在前、project 在后、去重保序）；`schema` 等标量以 workflow 为基，project 显式提供则覆盖。
 

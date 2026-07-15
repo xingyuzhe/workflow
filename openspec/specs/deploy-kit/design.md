@@ -17,7 +17,7 @@ openspec/config.yaml            # 合并产物（自动重生成）
 ## 关键类型 / 接口
 - Flags：`-Yes`（非交互）；**无** keep-v1
 - Doctor：非零 = 失败（含 v1 残留）；校验三配置文件存在且合并产物含 `schema:`
-- Merge：`Merge-WorkflowOpenSpecConfig`（rules 按键拼接去重；标量 project 可覆盖）
+- Merge / Sync：`Merge-WorkflowOpenSpecConfig`、`Sync-WorkflowOpenSpecConfig`（doctor 入口自动 sync；内容未变则不写盘）
 
 ## 与其它模块的关系
 - 安装 runtime / gates / schema-pack / design-review 运行时文件

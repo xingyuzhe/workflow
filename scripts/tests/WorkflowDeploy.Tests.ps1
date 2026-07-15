@@ -146,6 +146,50 @@ try {
   $projCfg2 = Get-Content -Raw (Join-Path $proj2 'openspec\config.project.yaml')
   Assert-True ($projCfg2 -match 'Second private line') "second install does not overwrite project config"
 
+  # machine sync: project edit + stale config.yaml → Sync/doctor heals without init
+  @(
+    'schema: workflow-spec',
+    'rules:',
+    '  proposal:',
+    '    - Keep my private rule forever',
+    '    - DoctorAutoSyncRule'
+  ) | Set-Content -Encoding utf8 (Join-Path $proj2 'openspec\config.project.yaml')
+  @(
+    'schema: workflow-spec',
+    'rules:',
+    '  proposal:',
+    '    - stale merged only'
+  ) | Set-Content -Encoding utf8 (Join-Path $proj2 'openspec\config.yaml')
+  $sync1 = Sync-WorkflowOpenSpecConfig -ProjectRoot $proj2
+  Assert-True ($sync1.Changed -eq $true) "sync merges when project changed"
+  Assert-True ($sync1.Status -eq 'Merged') "sync status Merged"
+  $healed = Get-Content -Raw (Join-Path $proj2 'openspec\config.yaml')
+  Assert-True ($healed -match 'DoctorAutoSyncRule') "sync writes project rule into config.yaml"
+  $sync2 = Sync-WorkflowOpenSpecConfig -ProjectRoot $proj2
+  Assert-True ($sync2.Changed -eq $false) "second sync is no-op when up to date"
+  Assert-True ($sync2.Status -eq 'Unchanged') "sync status Unchanged"
+
+  @(
+    'schema: workflow-spec',
+    'rules:',
+    '  proposal:',
+    '    - Keep my private rule forever',
+    '    - DoctorAutoSyncRule',
+    '    - ViaDoctorRule'
+  ) | Set-Content -Encoding utf8 (Join-Path $proj2 'openspec\config.project.yaml')
+  @(
+    '# stale',
+    'schema: workflow-spec',
+    'rules:',
+    '  proposal:',
+    '    - Keep my private rule forever'
+  ) | Set-Content -Encoding utf8 (Join-Path $proj2 'openspec\config.yaml')
+  $rDocSync = Invoke-WorkflowDoctor -ProjectRoot $proj2
+  if ($rDocSync.ExitCode -ne 0) { $rDocSync.Errors | ForEach-Object { Write-Host "  doctor: $_" } }
+  Assert-True ($rDocSync.ExitCode -eq 0) "doctor passes after auto-sync"
+  $viaDoc = Get-Content -Raw (Join-Path $proj2 'openspec\config.yaml')
+  Assert-True ($viaDoc -match 'ViaDoctorRule') "doctor auto-syncs project rules into config.yaml"
+
   # reintroduce legacy → doctor fails
   New-Item -ItemType Directory -Force -Path (Join-Path $proj '.cursor\skills\superpowers-v9') | Out-Null
   $r3 = Invoke-WorkflowDoctor -ProjectRoot $proj

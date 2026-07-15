@@ -196,7 +196,7 @@ function Write-WorkflowOpenSpecConfigFile {
   $sb = New-Object System.Text.StringBuilder
   if ($Generated) {
     [void]$sb.AppendLine('# AUTO-GENERATED - DO NOT EDIT.')
-    [void]$sb.AppendLine('# Edit openspec/config.workflow.yaml / openspec/config.project.yaml, then re-run init.')
+    [void]$sb.AppendLine('# Edit openspec/config.workflow.yaml / openspec/config.project.yaml; doctor/init auto-sync.')
     [void]$sb.AppendLine('')
   }
   if ($Schema) {
@@ -300,13 +300,60 @@ function Install-WorkflowOpenSpecConfigs {
   if (-not (Test-Path -LiteralPath $projDst)) {
     $shell = @(
       '# Project-private OpenSpec config. Init never overwrites this file.',
-      '# Add rules/schema here; re-run init to regenerate config.yaml.',
+      '# Edit this file; doctor/init auto-sync merges into config.yaml.',
       'rules: {}'
     ) -join "`n"
     Write-WorkflowUtf8Text -Path $projDst -Text ($shell + "`n")
   }
 
   Merge-WorkflowOpenSpecConfig -WorkflowPath $wfDst -ProjectPath $projDst -OutPath $cfgDst
+}
+
+function Sync-WorkflowOpenSpecConfig {
+  param([Parameter(Mandatory)][string]$ProjectRoot)
+  $ProjectRoot = Resolve-WorkflowPath -Path $ProjectRoot
+  if (-not (Test-Path -LiteralPath $ProjectRoot)) {
+    throw "project root not found: $ProjectRoot"
+  }
+  $ProjectRoot = (Resolve-Path -LiteralPath $ProjectRoot).Path
+  $openspec = Join-Path $ProjectRoot 'openspec'
+  $wf = Join-Path $openspec 'config.workflow.yaml'
+  $proj = Join-Path $openspec 'config.project.yaml'
+  $out = Join-Path $openspec 'config.yaml'
+
+  if (-not (Test-Path -LiteralPath $wf)) {
+    return [pscustomobject]@{ Status = 'MissingWorkflow'; Changed = $false }
+  }
+  if (-not (Test-Path -LiteralPath $proj)) {
+    $shell = @(
+      '# Project-private OpenSpec config. Init never overwrites this file.',
+      '# Edit this file; doctor/init auto-sync merges into config.yaml.',
+      'rules: {}'
+    ) -join "`n"
+    Write-WorkflowUtf8Text -Path $proj -Text ($shell + "`n")
+  }
+
+  $tmp = Join-Path ([IO.Path]::GetTempPath()) ('wf-cfg-sync-' + [guid]::NewGuid().ToString('N') + '.yaml')
+  try {
+    Merge-WorkflowOpenSpecConfig -WorkflowPath $wf -ProjectPath $proj -OutPath $tmp
+    $newText = Read-WorkflowUtf8Text -Path $tmp
+    $changed = $true
+    if (Test-Path -LiteralPath $out) {
+      $oldText = Read-WorkflowUtf8Text -Path $out
+      if (($oldText -replace "`r`n", "`n") -eq ($newText -replace "`r`n", "`n")) {
+        $changed = $false
+      }
+    }
+    if ($changed) {
+      Write-WorkflowUtf8Text -Path $out -Text $newText
+    }
+    return [pscustomobject]@{
+      Status  = $(if ($changed) { 'Merged' } else { 'Unchanged' })
+      Changed = $changed
+    }
+  } finally {
+    if (Test-Path -LiteralPath $tmp) { Remove-Item -LiteralPath $tmp -Force -ErrorAction SilentlyContinue }
+  }
 }
 
 function Write-WorkflowMetadata {
@@ -457,6 +504,12 @@ function Invoke-WorkflowDoctor {
   $ProjectRoot = (Resolve-Path -LiteralPath $ProjectRoot).Path
   $errors = New-Object System.Collections.Generic.List[string]
 
+  try {
+    $null = Sync-WorkflowOpenSpecConfig -ProjectRoot $ProjectRoot
+  } catch {
+    $errors.Add("config sync failed: $($_.Exception.Message)")
+  }
+
   foreach ($rel in (Get-WorkflowManifestFiles)) {
     # version/manifest written together; still check core files
     if ($rel -in @('.cursor/workflow/version.json', '.cursor/workflow/manifest.json')) { continue }
@@ -590,6 +643,7 @@ Export-ModuleMember -Function @(
   'Write-WorkflowMetadata',
   'Merge-WorkflowOpenSpecConfig',
   'Install-WorkflowOpenSpecConfigs',
+  'Sync-WorkflowOpenSpecConfig',
   'Install-WorkflowV2',
   'Invoke-WorkflowDoctor',
   'Get-WorkflowSpecPairErrors',

@@ -22,7 +22,7 @@ Init SHALL unconditionally remove workflow-namespace skill trees under `.cursor/
 - **THEN** those files MUST be removed and replaced by the current v2 command set
 
 ### Requirement: Isolate and merge openspec config
-Init SHALL overwrite `openspec/config.workflow.yaml` with the workflow-shipped template (schema default `workflow-spec` and SSOT/pair rules). Init SHALL NEVER overwrite `openspec/config.project.yaml`. Init SHALL regenerate `openspec/config.yaml` by merging workflow + project configs. Rules SHALL merge per artifact key (workflow items first, then project, dedupe preserving order). Scalar fields such as `schema` SHALL use workflow as the base; an explicit project scalar SHALL override. When `config.project.yaml` is absent and a legacy `config.yaml` exists, init SHALL rename that file to `config.project.yaml` before writing the workflow template and regenerating the merge. When no project file exists after migration, init SHALL write a minimal empty project shell. Init SHALL NOT delete business `openspec/specs/**` content.
+Init SHALL overwrite `openspec/config.workflow.yaml` with the workflow-shipped template (schema default `workflow-spec` and SSOT/pair rules). Init SHALL NEVER overwrite `openspec/config.project.yaml`. Init SHALL regenerate `openspec/config.yaml` by merging workflow + project configs. Rules SHALL merge per artifact key (workflow items first, then project, dedupe preserving order). Scalar fields such as `schema` SHALL use workflow as the base; an explicit project scalar SHALL override. When `config.project.yaml` is absent and a legacy `config.yaml` exists, init SHALL rename that file to `config.project.yaml` before writing the workflow template and regenerating the merge. When no project file exists after migration, init SHALL write a minimal empty project shell. Init SHALL NOT delete business `openspec/specs/**` content. Doctor SHALL auto-sync (merge) `openspec/config.yaml` from the workflow + project sources before validating, and SHALL be a no-op write when the merge output is unchanged.
 
 #### Scenario: Existing custom config migrates once
 - **WHEN** the target has `openspec/config.yaml` but no `config.project.yaml`
@@ -31,6 +31,10 @@ Init SHALL overwrite `openspec/config.workflow.yaml` with the workflow-shipped t
 #### Scenario: Project config never overwritten
 - **WHEN** `openspec/config.project.yaml` already exists and init runs twice
 - **THEN** the project file content MUST remain unchanged across both runs while `config.workflow.yaml` and merged `config.yaml` MAY be refreshed
+
+#### Scenario: Doctor syncs stale merge after project edit
+- **WHEN** `config.project.yaml` gains a new rule and `config.yaml` is stale
+- **THEN** doctor MUST regenerate `config.yaml` to include that rule before other checks
 
 #### Scenario: Business specs preserved
 - **WHEN** init runs on a project with existing `openspec/specs/**`

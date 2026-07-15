@@ -12,6 +12,8 @@ If you were dispatched as a subagent to execute a specific task, ignore this rou
 
 **Pack root:** `.cursor/workflow/pack/`
 
+`openspec/config.yaml` is machine-generated from `config.workflow.yaml` + `config.project.yaml`. `doctor` / `init` auto-sync it — do not hand-edit.
+
 Before acting on workflow intents, **read the mapped prompt** (and gates when apply). Lifecycle work is driven by `/opsx:*` commands and these pack files — not by scanning skill directories.
 
 | User / command | Load |
