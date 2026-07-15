@@ -1,6 +1,7 @@
-schema: spec-driven
+schema: workflow-spec
 
 # Per-capability design companion + anti-duplication (SSOT)
+# rules values MUST be arrays of strings (OpenSpec CLI)
 rules:
   proposal:
     - Own Why / What Changes / Capabilities / Impact / Non-goals only

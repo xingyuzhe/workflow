@@ -1,0 +1,5 @@
+﻿{
+    "engine":  "powershell",
+    "schema":  "workflow-spec",
+    "version":  "2.0.0"
+}

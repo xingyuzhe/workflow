@@ -1,0 +1,26 @@
+﻿{
+    "version":  "2.0.0",
+    "files":  [
+                  ".cursor/workflow/pack/prompts/apply.md",
+                  ".cursor/workflow/pack/prompts/explore.md",
+                  ".cursor/workflow/pack/prompts/new.md",
+                  ".cursor/workflow/pack/prompts/continue.md",
+                  ".cursor/workflow/pack/prompts/ff.md",
+                  ".cursor/workflow/pack/prompts/verify.md",
+                  ".cursor/workflow/pack/prompts/sync.md",
+                  ".cursor/workflow/pack/prompts/archive.md",
+                  ".cursor/workflow/pack/prompts/grill.md",
+                  ".cursor/workflow/pack/prompts/branch.md",
+                  ".cursor/workflow/pack/prompts/finish.md",
+                  ".cursor/workflow/pack/prompts/doctor.md",
+                  ".cursor/workflow/pack/gates/tdd.md",
+                  ".cursor/workflow/pack/gates/verify.md",
+                  ".cursor/workflow/pack/gates/debug.md",
+                  ".cursor/rules/workflow-router.mdc",
+                  ".cursor/commands/opsx-apply.md",
+                  "openspec/schemas/workflow-spec/schema.yaml",
+                  "openspec/config.yaml",
+                  ".cursor/workflow/version.json",
+                  ".cursor/workflow/manifest.json"
+              ]
+}

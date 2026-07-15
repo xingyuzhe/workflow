@@ -1,0 +1,33 @@
+---
+description: Workflow v2 router — command/intent to pack prompts
+globs:
+alwaysApply: true
+---
+
+# Workflow Router (v2)
+
+<SUBAGENT-STOP>
+If you were dispatched as a subagent to execute a specific task, ignore this router. Follow the instructions you were given.
+</SUBAGENT-STOP>
+
+**Pack root:** `.cursor/workflow/pack/`
+
+Before acting on workflow intents, **read the mapped prompt** (and gates when apply). Do not scan Superpowers/OpenSpec skill trees for primary lifecycle actions.
+
+| User / command | Load |
+|----------------|------|
+| `/opsx:explore` / explore ideas | `pack/prompts/explore.md` |
+| `/opsx:new` / new change | `pack/prompts/new.md` + `branch.md` |
+| `/opsx:ff` | `pack/prompts/ff.md` + `branch.md` |
+| `/opsx:continue` | `pack/prompts/continue.md` |
+| grill / design review | `pack/prompts/grill.md` |
+| `/opsx:apply` / implement / start coding | `pack/prompts/apply.md` + `pack/gates/*` |
+| `/opsx:verify` | `pack/prompts/verify.md` |
+| `/opsx:sync` | `pack/prompts/sync.md` |
+| `/opsx:archive` | `pack/prompts/archive.md` + `finish.md` |
+| `/opsx:doctor` | `pack/prompts/doctor.md` |
+| bug / test failure | `pack/gates/debug.md` |
+
+If `.cursor/workflow/state.json` exists, read it and reconcile with `openspec status` (CLI wins).
+
+**Quality:** During apply, TDD / verify / debug gates are mandatory for their triggers. Unsure about TDD → ask the user.

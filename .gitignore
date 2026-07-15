@@ -3,3 +3,6 @@
 *.bak.*
 .DS_Store
 .tmp-smoke-deploy/
+
+# Workflow v2 local phase state
+.cursor/workflow/state.json
