@@ -79,4 +79,4 @@ v1 workflow 将 OpenSpec 与 Superpowers 整合成「双技能操作系统」。
 3. 业务仓直接跑 v2 `init.ps1 -Yes`（接受破坏性替换）
 4. 宣布 v1 不再演进
 
-详设见 [docs/workflow-v2-redesign.md](../../docs/workflow-v2-redesign.md)。
+详设见 [docs/architecture.md](../../docs/architecture.md)。

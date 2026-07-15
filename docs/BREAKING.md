@@ -1,23 +1,23 @@
-# Workflow v2 — BREAKING
+# Init 破坏性说明
 
-Installing or upgrading to Workflow v2 is **destructive**. There is no coexistence with v1.
+`scripts/init.ps1 -Yes` 会替换目标项目中的**工作流运行时**，不是合并安装。
 
-## What init does
+## 会做什么
 
-- Deletes `.cursor/skills` namespaces: `superpowers*`, `openspec*`, `grilling*`, `workflow*`
-- Deletes and reinstalls workflow-owned Cursor entries (`opsx-*`, legacy superpowers/openspec rules/command dirs)
-- Overwrites `openspec/config.yaml` with the workflow template (`schema: workflow-spec`)
-- Installs `.cursor/workflow/pack/`, `openspec/schemas/workflow-spec/`, router, version/manifest
+- 删除 `.cursor/skills` 下命名空间：`superpowers*`、`openspec*`、`grilling*`、`workflow*`
+- 删除并重装工作流入口：`opsx-*` 命令、已知旧工作流 rules 目录等
+- 整文件覆盖 `openspec/config.yaml`（默认 `workflow-spec` + SSOT/配对规则）
+- 安装 `.cursor/workflow/pack/`、`openspec/schemas/workflow-spec/`、router、version/manifest
 
-## What init does not delete
+## 不会做什么
 
-- Business specs under `openspec/specs/**`
-- Unrelated user skills/rules/commands outside workflow namespaces
+- 不删除业务规格 `openspec/specs/**`
+- 不删除命名空间之外的用户自有 skills / rules / commands
 
-## Upgrade
+## 用法
 
 ```powershell
 pwsh -File path\to\workflow\scripts\init.ps1 -Target . -Yes
 ```
 
-Doctor fails if legacy workflow skills remain. Git tag `v1-final` is archaeology only — not a supported runtime.
+若仍存在上述工作流 skill 残留，`doctor.ps1` 会失败。
