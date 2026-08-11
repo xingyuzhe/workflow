@@ -4,6 +4,7 @@
 #>
 param(
   [string]$ProjectRoot = (Get-Location).Path,
+  [ValidateSet('cursor','codex')][string[]]$Clients = @(),
   [switch]$Fix
 )
 
@@ -13,9 +14,9 @@ Import-Module (Join-Path $scriptDir 'lib/WorkflowDeploy.psm1') -Force
 
 $ProjectRoot = Resolve-WorkflowPath -Path $ProjectRoot
 if ($Fix) {
-  Repair-WorkflowInstall -ProjectRoot $ProjectRoot
+  Repair-WorkflowInstall -ProjectRoot $ProjectRoot -Clients $Clients
 }
-$result = Invoke-WorkflowDoctor -ProjectRoot $ProjectRoot
+$result = Invoke-WorkflowDoctor -ProjectRoot $ProjectRoot -Clients $Clients
 if ($result.ExitCode -eq 0) {
   Write-Host "Doctor OK: $ProjectRoot" -ForegroundColor Green
   exit 0

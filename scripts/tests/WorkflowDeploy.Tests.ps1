@@ -66,13 +66,13 @@ try {
   ) | Set-Content -Encoding utf8 (Join-Path $proj '.workflow\rules\early-project.md')
   @(
     '---',
-    'description: Prisma project rule',
-    'globs: apps/api/prisma/**/*,docs/data/**/*',
+    'description: Deployment project rule',
+    'globs: src/deploy/**/*,docs/deploy/**/*',
     'alwaysApply: false',
     '---',
     '',
-    '# Prisma project rule'
-  ) | Set-Content -Encoding utf8 (Join-Path $proj '.workflow\rules\data-model.md')
+    '# Deployment project rule'
+  ) | Set-Content -Encoding utf8 (Join-Path $proj '.workflow\rules\deployment-scope.md')
   @(
     '{',
     '  "schemaVersion": 1,',
@@ -91,7 +91,7 @@ try {
     '  "schemaVersion": 1,',
     '  "rules": [',
     '    { "path": "early-project.md", "description": "Early project rule", "always": true, "paths": [] },',
-    '    { "path": "data-model.md", "description": "Prisma project rule", "always": false, "paths": ["apps/api/prisma/**/*", "docs/data/**/*"] }',
+    '    { "path": "deployment-scope.md", "description": "Deployment project rule", "always": false, "paths": ["src/deploy/**/*", "docs/deploy/**/*"] }',
     '  ]',
     '}'
   ) | Set-Content -Encoding utf8 (Join-Path $proj '.workflow\rules.json')
@@ -128,7 +128,7 @@ try {
   Assert-True ($schemaContract -match 'This artifact is required because tasks depend on it') "schema makes change design unambiguously required"
   Assert-True ($schemaContract -notmatch 'When to include design') "schema has no optional-design contradiction"
   Assert-True ($agents1 -match 'Read `\.agents/rules/early-project\.md` before any work \(always apply\)') "routes always-apply project rule"
-  Assert-True ($agents1 -match 'apps/api/prisma/\*\*/\*.*docs/data/\*\*/\*') "routes path-scoped project rule"
+  Assert-True ($agents1 -match 'src/deploy/\*\*/\*.*docs/deploy/\*\*/\*') "routes path-scoped project rule"
   Assert-True ($agents1 -notmatch '\$\(') "renders project rule metadata without PowerShell expressions"
   $codexConfig1 = Get-Content -Raw -Encoding utf8 (Join-Path $proj '.codex\config.toml')
   Assert-True ($codexConfig1 -match '\[mcp_servers\."example\.mcp"\]') "generates safely quoted Codex MCP server"
@@ -315,6 +315,30 @@ try {
   Assert-Throws { Install-WorkflowV2 -SourceRoot $repoRoot -TargetRoot $bad } 'mystery' "unknown MCP fields fail explicitly"
   Set-Content -Encoding utf8 (Join-Path $bad '.workflow\mcp.json') '{ "schemaVersion": 1, "servers": { "bad": { "transport": "stdio", "command": "x", "enabled": "yes" } } }'
   Assert-Throws { Install-WorkflowV2 -SourceRoot $repoRoot -TargetRoot $bad } 'enabled.*boolean' "invalid MCP field types fail explicitly"
+
+  # Codex-only deployment must treat the entire Cursor tree as out of scope.
+  $codexOnly = Join-Path $tmp 'codex-only'
+  New-Item -ItemType Directory -Force -Path (Join-Path $codexOnly '.cursor\skills\openspec-private') | Out-Null
+  New-Item -ItemType Directory -Force -Path (Join-Path $codexOnly '.cursor\rules') | Out-Null
+  [IO.File]::WriteAllBytes((Join-Path $codexOnly '.cursor\skills\openspec-private\SKILL.md'), [byte[]](0,1,2,13,10,255))
+  Set-Content -Encoding utf8 (Join-Path $codexOnly '.cursor\rules\project-only.mdc') 'project-owned cursor rule'
+  $cursorFingerprint = {
+    $root = Join-Path $codexOnly '.cursor'
+    return (@(Get-ChildItem -LiteralPath $root -Recurse -File | Sort-Object FullName | ForEach-Object {
+      $_.FullName.Substring($root.Length) + ':' + (Get-FileHash -Algorithm SHA256 -LiteralPath $_.FullName).Hash
+    }) -join "`n")
+  }
+  $cursorBefore = &$cursorFingerprint
+  Install-WorkflowV2 -SourceRoot $repoRoot -TargetRoot $codexOnly -Clients codex
+  $cursorAfter = &$cursorFingerprint
+  Assert-True ($cursorAfter -eq $cursorBefore) "Codex-only install leaves Cursor tree byte-for-byte unchanged"
+  Assert-True (Test-Path (Join-Path $codexOnly '.agents\skills\openspec-workflow\SKILL.md')) "Codex-only install creates Codex skill"
+  Assert-True (-not (Test-Path (Join-Path $codexOnly '.cursor\commands\opsx-apply.md'))) "Codex-only install does not create Cursor commands"
+  $codexMetadata = Get-Content -Raw (Join-Path $codexOnly '.workflow\version.json') | ConvertFrom-Json
+  Assert-True ((@($codexMetadata.clients) -join ',') -eq 'codex') "Codex-only metadata records only Codex"
+  Assert-True ((Invoke-WorkflowDoctor -ProjectRoot $codexOnly).ExitCode -eq 0) "Codex-only doctor ignores Cursor-private content"
+  Repair-WorkflowInstall -ProjectRoot $codexOnly
+  Assert-True ((&$cursorFingerprint) -eq $cursorBefore) "Codex-only repair preserves installed client scope"
 
 } finally {
   Remove-Item -Recurse -Force $tmp -ErrorAction SilentlyContinue

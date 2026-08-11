@@ -7,10 +7,13 @@
   Workflow source root (contains .workflow/pack). Defaults to repo containing this script.
 .PARAMETER Yes
   Required non-interactive confirmation flag.
+.PARAMETER Clients
+  Client adapters to install. Defaults to cursor and codex.
 #>
 param(
   [string]$Target = (Get-Location).Path,
   [string]$Source = '',
+  [ValidateSet('cursor','codex')][string[]]$Clients = @('cursor','codex'),
   [switch]$Yes
 )
 
@@ -36,9 +39,10 @@ if (-not (Test-Path -LiteralPath $Target)) {
 Write-Host "Workflow init"
 Write-Host "  Source: $Source"
 Write-Host "  Target: $Target"
-Install-WorkflowV2 -SourceRoot $Source -TargetRoot $Target
+Write-Host "  Clients: $($Clients -join ', ')"
+Install-WorkflowV2 -SourceRoot $Source -TargetRoot $Target -Clients $Clients
 
-$doctor = Invoke-WorkflowDoctor -ProjectRoot $Target
+$doctor = Invoke-WorkflowDoctor -ProjectRoot $Target -Clients $Clients
 if ($doctor.ExitCode -ne 0) {
   Write-Host "Doctor FAILED:" -ForegroundColor Red
   $doctor.Errors | ForEach-Object { Write-Host "  - $_" -ForegroundColor Red }
