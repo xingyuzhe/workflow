@@ -1,22 +1,24 @@
-﻿# Fast-forward change
+# Fast-forward contract
 
-Create **all** apply-ready artifacts in one pass: proposal → specs (pairs) → design → tasks.
+## Preconditions
 
-## Steps
+- A unique change name and the `branch.md` contract.
 
-1. Follow `branch.md` (`change/<name>`).
-2. Ensure schema is **workflow-spec**.
-3. Loop until apply-ready:
-   ```text
-   openspec status --change "<name>"
-   openspec instructions <next-artifact> --change "<name>"
-   ```
-   Write each artifact completely before moving on.
-4. **Specs:** every `specs/<capability>/` MUST contain `spec.md` **and** `design.md` created together. SSOT: `openspec/config.yaml` + `docs/ssot.md`.
-5. Stop when status shows apply-ready. Offer `/opsx:grill` (optional) then `/opsx:apply`.
+## Inputs
 
-## Done when
+- User intent, repository rules, current main specs, and the `workflow-spec` artifact contract.
 
-- `openspec status --change "<name>"` is apply-ready.
-- No capability directory lacks a design companion.
-- User has been offered grill vs apply (do not start coding until they choose apply / implement).
+## Outputs
+
+- A new or existing change with every artifact required for apply readiness.
+
+## Acceptance
+
+- OpenSpec status reports the change apply-ready.
+- All artifacts satisfy schema dependencies and ownership.
+- Every touched capability directory is a complete `spec.md`/`design.md` pair.
+
+## Stop conditions
+
+- Stop when a missing decision would materially change requirements or design.
+- Do not begin implementation unless the user also authorized apply.

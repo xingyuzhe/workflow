@@ -1,9 +1,23 @@
-﻿# Grill (design review)
+# Design review contract
 
-Interview the user one question at a time about the active change's proposal, design, and specs. Provide a recommended answer each time.
+## Preconditions
 
-Write/update `openspec/changes/<name>/review-notes.md` as decisions land.
+- An active change with artifacts ready for review.
 
-Do not implement until shared understanding is confirmed.
+## Inputs
 
-Grilling is optional by default and does **not** hard-block `/opsx:apply` unless the user requires it.
+- Proposal, design, capability specs/designs, current repository constraints, and unresolved questions.
+
+## Outputs
+
+- Decisions, risks, contradictions, and unresolved questions recorded in `review-notes.md` when material.
+- Required artifact corrections identified before implementation.
+
+## Acceptance
+
+- Spec-level behavior, design feasibility, boundaries, failure modes, and verification expectations are coherent enough for the requested next phase.
+
+## Stop conditions
+
+- Do not implement during review unless the user separately authorizes apply.
+- Stop for user decisions when alternatives materially change scope, behavior, risk, or cost.

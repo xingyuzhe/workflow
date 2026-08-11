@@ -1,9 +1,15 @@
-﻿# Branch
+# Branch contract
 
-Before feature work on an OpenSpec change:
+## Required state
 
-**Default:** create/switch to `change/<name>` in the current workspace.
+- OpenSpec change work is isolated from `main`/`master` on a change branch.
+- Default branch name: `change/<name>`.
+- Use a worktree only when parallel isolation or environment constraints require one.
 
-Offer worktree only if the user needs parallel isolation.
+## Acceptance
 
-Do not implement on `main`/`master`. Announce the branch in use.
+- The active workspace and branch are identified before implementation starts.
+
+## Authority
+
+- Do not discard, overwrite, or rewrite unrelated branch state without explicit authorization.

@@ -6,5 +6,3 @@ description: Run OpenSpec apply workflow
 ---
 
 Load and follow: `.workflow/pack/prompts/apply.md`
-
-If applying, also load all files under `.workflow/pack/gates/`.

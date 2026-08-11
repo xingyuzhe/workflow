@@ -1,10 +1,18 @@
-﻿# Finish branch
+# Branch disposition contract
 
-After implementation is complete and verification passes, present options and wait:
+## Preconditions
 
-1. Merge to base branch locally
-2. Push and open a PR
-3. Keep the branch as-is
-4. Discard the branch
+- Requested implementation and verification are complete, or residuals are explicit.
 
-Do not merge/push/discard without an explicit user choice. Verify tests (or record why none) before offering merge/PR.
+## Output
+
+- Present the relevant choices: merge locally, push/open a PR, keep the branch, or discard it.
+
+## Acceptance
+
+- The selected disposition is completed and reported with current branch/test state.
+
+## Authority
+
+- Merge, push, PR creation, and branch discard each require explicit user authorization.
+- A choice authorizes only the selected disposition.

@@ -1,25 +1,25 @@
-﻿# New change
+# New change contract
 
-Create a new OpenSpec change under schema **workflow-spec**.
+## Preconditions
 
-## Steps
+- A unique change name and the `branch.md` contract.
 
-1. Follow `branch.md` (default branch `change/<name>`). Do not work on `main`/`master`.
-2. Create the change (CLI or equivalent) so it uses project default schema `workflow-spec` (`openspec/config.yaml`).
-3. Produce artifacts in schema order. For each step:
-   ```text
-   openspec status --change "<name>"
-   openspec instructions <artifact> --change "<name>"
-   ```
-   Then write the files that instructions require.
-4. **Specs phase (hard rule):** for every capability under `openspec/changes/<name>/specs/<capability>/`, create **both** `spec.md` and `design.md` in the same step. Never leave only `spec.md`.
-5. Respect SSOT: `docs/ssot.md` and `openspec/config.yaml` rules.
-6. After each major artifact, optionally update `.workflow/state.json` (`active_change`, `phase`, `branch`).
+## Inputs
 
-## Done when
+- User intent, repository rules, current main specs, and the `workflow-spec` artifact contract.
 
-```text
-openspec status --change "<name>"
-```
+## Outputs
 
-shows all planning artifacts complete (or the user stops early). Specs directories that exist are paired (`spec.md` + `design.md`).
+- A new change using `workflow-spec`.
+- The initial artifact scope requested by the user, produced in schema dependency order.
+- Optional local state that points to the active change without replacing OpenSpec status.
+
+## Acceptance
+
+- Each produced artifact satisfies the schema contract.
+- OpenSpec status recognizes the change and accurately reports its next artifact.
+- Every touched capability directory is a complete `spec.md`/`design.md` pair.
+
+## Stop conditions
+
+- Stop for missing product decisions, conflicting source-of-truth content, or authority beyond creating the change.

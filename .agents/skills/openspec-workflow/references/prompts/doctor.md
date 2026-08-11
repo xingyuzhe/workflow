@@ -1,9 +1,21 @@
-﻿# Doctor
+# Doctor contract
 
-Run the workflow doctor script and report results:
+## Interface
 
-```powershell
-pwsh -File scripts/doctor.ps1
-```
+- Read-only diagnosis: `pwsh -File scripts/doctor.ps1`
+- Authorized repair: `pwsh -File scripts/doctor.ps1 -Fix`
 
-Doctor is read-only by default. Non-zero exit = unhealthy. Report drift without editing it; when the user authorizes repair, run `pwsh -File scripts/doctor.ps1 -Fix` and report the subsequent strict result.
+## Outputs
+
+- Health result and actionable failures.
+- After repair, a second strict read-only result.
+
+## Acceptance
+
+- Exit code zero means the installation contract passes.
+- Non-zero results remain reported as unhealthy; do not claim repair success.
+
+## Authority
+
+- Diagnosis is read-only.
+- Run `-Fix` only when the user authorized repair or installation.

@@ -21,3 +21,7 @@
 ## Impact
 
 <!-- Affected code, APIs, dependencies, systems -->
+
+## Non-goals
+
+<!-- Explicit exclusions and boundaries -->

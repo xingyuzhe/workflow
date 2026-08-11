@@ -1,6 +1,6 @@
 # WorkflowDeploy.psm1 — platform-neutral workflow deployment
 
-$script:WorkflowVersion = '3.0.0'
+$script:WorkflowVersion = '3.1.0'
 $script:WorkflowAgentsStart = '<!-- BEGIN WORKFLOW MANAGED -->'
 $script:WorkflowAgentsEnd = '<!-- END WORKFLOW MANAGED -->'
 $script:WorkflowCodexConfigStart = '# BEGIN WORKFLOW MANAGED MCP'
@@ -151,9 +151,9 @@ function Get-WorkflowAgentsBlock {
   [void]$lines.Add($script:WorkflowAgentsStart)
   [void]$lines.Add('## OpenSpec workflow')
   [void]$lines.Add('')
-  [void]$lines.Add('Use `$openspec-workflow` for OpenSpec lifecycle work. Treat `/opsx:name`, `/opsx-name`, `$openspec-workflow name`, and a clear natural-language lifecycle request as equivalent.')
+  [void]$lines.Add('Use `$openspec-workflow` for explicit OpenSpec lifecycle work. Treat `/opsx:name`, `/opsx-name`, `$openspec-workflow name`, and equivalent lifecycle intent as aliases.')
   [void]$lines.Add('')
-  [void]$lines.Add('Route operations as follows: `explore`, `new`, `ff`, `continue`, `grill`, `apply`, `verify`, `sync`, `archive`, and `doctor`. Bugs, test failures, and unexpected behavior use the skill debug gate.')
+  [void]$lines.Add('Route operations as follows: `explore`, `new`, `ff`, `continue`, `grill`, `apply`, `verify`, `sync`, `archive`, and `doctor`. Failures remain in this workflow only when they occur within an active lifecycle operation.')
   [void]$lines.Add('')
   [void]$lines.Add('- Treat `openspec/config.yaml` as generated from `openspec/config.workflow.yaml` and `openspec/config.project.yaml`; do not hand-edit it.')
   [void]$lines.Add('- Reconcile `.workflow/state.json` with `openspec status`; CLI output wins and missing local state never blocks work.')
@@ -513,9 +513,9 @@ alwaysApply: true
 
 # Workflow router
 
-Load the matching prompt from `.workflow/pack/prompts/`. For apply and failures, obey `.workflow/pack/gates/`.
+For explicit OpenSpec lifecycle intent, load the matching contract from `.workflow/pack/prompts/` and any contract it references.
 '@ }
-function Get-WorkflowCommandText { param([string]$Operation) "---`nname: /opsx-$Operation`nid: opsx-$Operation`ncategory: OpenSpec`ndescription: Run OpenSpec $Operation workflow`n---`n`nLoad and follow: ``.workflow/pack/prompts/$Operation.md```n`nIf applying, also load all files under ``.workflow/pack/gates/``.`n" }
+function Get-WorkflowCommandText { param([string]$Operation) "---`nname: /opsx-$Operation`nid: opsx-$Operation`ncategory: OpenSpec`ndescription: Run OpenSpec $Operation workflow`n---`n`nLoad and follow: ``.workflow/pack/prompts/$Operation.md```n" }
 
 function Remove-WorkflowIndexedFiles {
   param([string]$Root, [string]$IndexPath)
@@ -696,6 +696,9 @@ function Invoke-WorkflowDoctor {
     $expectedAgents=Get-WorkflowAgentsBlock $rules;$agents=Join-Path $ProjectRoot 'AGENTS.md'
     if(-not(Test-Path -LiteralPath $agents)){$errors.Add('missing: AGENTS.md')}else{$raw=Read-WorkflowUtf8Text $agents;$pattern='(?ms)'+[regex]::Escape($script:WorkflowAgentsStart)+'.*?'+[regex]::Escape($script:WorkflowAgentsEnd);if($raw -notmatch $pattern){$errors.Add('AGENTS.md missing workflow managed block')}elseif((&$normalize $Matches[0])-ne(&$normalize $expectedAgents)){$errors.Add('generated content drift: AGENTS.md managed block')}}
     foreach($kind in @('prompts','gates')){Get-ChildItem -LiteralPath (Join-Path $ProjectRoot ".workflow/pack/$kind") -File | % {&$compare ('.agents/skills/openspec-workflow/references/'+$kind+'/'+$_.Name) (Read-WorkflowUtf8Text $_.FullName)}}
+    $gateRoot=Join-Path $ProjectRoot '.workflow/pack/gates'
+    if(-not(Test-Path -LiteralPath (Join-Path $gateRoot 'acceptance.md') -PathType Leaf)){$errors.Add('missing contract: .workflow/pack/gates/acceptance.md')}
+    foreach($oldGate in @('tdd.md','debug.md','verify.md')){if(Test-Path -LiteralPath (Join-Path $gateRoot $oldGate)){$errors.Add("superseded method gate present: .workflow/pack/gates/$oldGate")}}
   } catch {$errors.Add("canonical source invalid: $($_.Exception.Message)")}
   foreach($rel in @('.workflow/version.json','.workflow/manifest.json','.agents/skills/openspec-workflow/SKILL.md','.agents/skills/openspec-workflow/agents/openai.yaml')){if(-not(Test-Path -LiteralPath (Join-Path $ProjectRoot $rel) -PathType Leaf)){$errors.Add("missing: $rel")}}
   foreach($rel in @('.workflow/version.json','.workflow/manifest.json')){try{$meta=Read-WorkflowJsonFile (Join-Path $ProjectRoot $rel);if($meta.version -ne $script:WorkflowVersion){$errors.Add("metadata version drift: $rel")}}catch{$errors.Add("invalid metadata: $rel - $($_.Exception.Message)")}}

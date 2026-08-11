@@ -12,6 +12,7 @@
 - 安装 `.workflow/pack/`、`openspec/schemas/workflow-spec/`，并在 `.workflow/` 写唯一 version/manifest
 - 从 `.workflow/mcp.json` 和 `.workflow/rules.json` 生成 Cursor/Codex 适配产物
 - 安装 `.agents/skills/openspec-workflow/` 及其生成 references
+- 删除旧的 workflow-owned `tdd.md`、`debug.md`、`verify.md` gates，安装 `acceptance.md`；需要固定方法的项目应改由项目规则声明
 - 更新 `AGENTS.md` 中标记的 workflow managed block；块外项目内容保持不变
 - 只清理各客户端 `.workflow-managed.json` 记录的旧规则产物；不宽泛删除未受管文件
 - 更新 `.codex/config.toml` 中标记的 MCP managed block；块外 TOML 保持不变

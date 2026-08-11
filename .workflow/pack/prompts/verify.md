@@ -1,19 +1,26 @@
-﻿# Verify change
+# Verify contract
 
-Check implementation against change artifacts. Do **not** archive yet.
+Load `../gates/acceptance.md`.
 
-## Steps
+## Preconditions
 
-1. ```text
-   openspec status --change "<name>"
-   ```
-   Tasks should be complete (or list what remains).
-2. Read proposal / design / `specs/*/spec.md` (+ companion `design.md`) and `tasks.md`.
-3. Diff code vs requirements/scenarios; list gaps with file paths.
-4. Confirm logic tasks followed TDD/verify gates (evidence in session). Note skips that were docs-only.
-5. Optionally run project tests / `scripts/doctor.ps1` and record output.
+- An active change with implementation to assess.
 
-## Done when
+## Inputs
 
-- You report **pass** or **fail** with concrete gaps.
-- User decides: fix → re-apply, or proceed to archive despite residuals.
+- Proposal, design, capability specs/designs, tasks, implementation diff, and relevant verification facilities.
+
+## Outputs
+
+- A pass/fail report with concrete evidence and file references.
+- Remaining tasks, requirement gaps, or accepted residuals.
+
+## Acceptance
+
+- Completeness: requested tasks and artifact obligations are accounted for.
+- Correctness: requirements and scenarios are supported by evidence.
+- Coherence: implementation and artifacts do not materially contradict each other.
+
+## Stop conditions
+
+- Verification does not authorize fixing, archiving, merging, or pushing unless separately requested.

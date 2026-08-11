@@ -1,19 +1,24 @@
-﻿# Explore
+# Explore contract
 
-Think through ideas **before** creating or changing artifacts. Do not implement code unless the user explicitly asks.
+## Preconditions
 
-## Steps
+- None.
 
-1. Clarify the problem, constraints, and success criteria (ask if missing).
-2. Optionally inspect existing work:
-   ```text
-   openspec list
-   openspec list --specs
-   openspec status --change "<name>"
-   ```
-3. Compare 2–3 approaches with trade-offs; recommend one.
-4. If the user wants to proceed: suggest `/opsx:new` or `/opsx:ff` (or continue an existing change). Do **not** create artifacts in explore unless asked.
+## Inputs
 
-## Done when
+- The user's problem, constraints, success criteria, and relevant repository context.
 
-- User has a clear recommended next command/action, or explicitly pauses.
+## Outputs
+
+- A clearer problem statement and the decisions needed to proceed.
+- Alternatives and trade-offs when a real decision exists.
+- A recommended lifecycle transition when the user wants to continue.
+
+## Acceptance
+
+- Material assumptions, uncertainties, and consequences are visible.
+- The user can decide whether to stop, create a change, or continue an existing change.
+
+## Stop conditions
+
+- Do not create artifacts or implementation changes without authorization.

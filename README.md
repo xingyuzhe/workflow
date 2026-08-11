@@ -1,6 +1,6 @@
 # Workflow
 
-面向 Cursor 与 Codex 的 OpenSpec 流程工具包：双客户端入口、自定义 schema、短提示，以及 apply 时的三条质量门禁。
+面向 Cursor 与 Codex 的 OpenSpec 流程工具包：双客户端入口、自定义 schema、生命周期交付契约，以及基于证据的验收。
 
 ## 安装到项目
 
@@ -22,7 +22,7 @@ pwsh -File scripts/doctor.ps1 -ProjectRoot D:\work\your-project
 | `.workflow/rules.json` · `.workflow/rules/` | 项目规则元数据与正文 SSOT |
 | `.workflow/version.json` · `manifest.json` · `state.json` | 单一元数据与状态权威 |
 | `openspec/schemas/workflow-spec/` | 默认 schema |
-| `openspec/config.workflow.yaml` | 工作流模板规则（init 可覆盖） |
+| `openspec/config.workflow.yaml` | 工作流 schema 选择器（init 可覆盖） |
 | `openspec/config.project.yaml` | 项目私有规则（init **永不**覆盖） |
 | `openspec/config.yaml` | 合并产物（`init` 或 `doctor -Fix` 生成，勿手改） |
 | `.cursor/rules/workflow-router.mdc` | 唯一 alwaysApply 路由 |
@@ -50,7 +50,7 @@ explore（可选）
     → archive
 ```
 
-旁路：随时 `/opsx:doctor` 做健康检查。实现中遇测试/报错走 debug 门禁（router 也会映射「修 bug」类意图）。
+旁路：随时 `/opsx:doctor` 做健康检查。仅活跃 OpenSpec 操作中的失败继续由该操作契约处理；普通 bug 和测试失败不自动进入 OpenSpec 工作流。
 
 | 命令 | 作用 | 怎么用 |
 |------|------|--------|
@@ -58,8 +58,8 @@ explore（可选）
 | `/opsx:new` | 新建 change，按 schema 逐步写 proposal → … | 已知要开变更；会建分支 `change/<name>` |
 | `/opsx:ff` | 一口气写齐 apply 所需产物 | 目标清晰、想少来回时用；写完再决定 grill 或 apply |
 | `/opsx:continue` | 只推进**下一个**未完成产物 | `new`/`ff` 中断后续用；可反复调用 |
-| `/opsx:grill` | 压测设计（一问一答），写 `review-notes.md` | 设计争议大时用；**默认不阻断** apply |
-| `/opsx:apply` | 按 `tasks.md` 实现；强制 TDD/verify/debug 门禁 | 产物齐套后开干；勾选任务前要有运行证据 |
+| `/opsx:grill` | 审查设计并记录 `review-notes.md` | 设计争议大时用；**默认不阻断** apply |
+| `/opsx:apply` | 按 artifacts 实现并提供完成证据 | 产物齐套后使用；具体方法由 agent 按项目规则与风险选择 |
 | `/opsx:verify` | 对照规格检查实现，**不归档** | apply 告一段落后用；给出 pass/fail 与缺口 |
 | `/opsx:sync` | 把 change 里的 delta 同步到 `openspec/specs/`（必须 `spec.md`+`design.md`） | 需要主库先更新、或 archive 前补配对时用 |
 | `/opsx:archive` | 归档 change，并确保主规格成对；然后询问 merge/PR/保留/丢弃 | verify 通过（或你接受残留）后收尾 |
@@ -72,6 +72,7 @@ Doctor 默认只读；使用 `scripts/doctor.ps1 -Fix` 才会重新生成 workfl
 - **`new` vs `ff`**：要分步讨论选 `new`+`continue`；要一次齐套选 `ff`。
 - **`sync` vs `archive`**：`archive` 常会顺带更新主规格；若 CLI 只写出了 `spec.md`，仍须按 sync/archive prompt **补 `design.md`**，且 doctor 会查配对。
 - 自然语言「开始写代码 / 实现吧」通常等价于 **apply**（见 router）。
+- Shared workflow 不规定 TDD、调试步骤、测试频率或重试次数；项目如需这些方法，应在项目规则中按适用范围声明。
 
 ## 测试
 

@@ -6,4 +6,4 @@ alwaysApply: true
 
 # Workflow router
 
-Load the matching prompt from `.workflow/pack/prompts/`. For apply and failures, obey `.workflow/pack/gates/`.
+For explicit OpenSpec lifecycle intent, load the matching contract from `.workflow/pack/prompts/` and any contract it references.

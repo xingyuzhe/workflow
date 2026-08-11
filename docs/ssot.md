@@ -6,7 +6,7 @@
 | 跨模块决策 | change 级 `design.md` |
 | 模块结构 / 类型 / 对内接口 | `specs/<capability>/design.md` |
 | 可验证行为 | `specs/<capability>/spec.md` |
-| Workflow prompts / gates | `.workflow/pack/` |
+| Workflow operation / acceptance contracts | `.workflow/pack/` |
 | 项目规则 | `.workflow/rules.json` + `.workflow/rules/` |
 | MCP 定义 | `.workflow/mcp.json` |
 | Workflow version / manifest / state | `.workflow/` 对应 JSON 文件 |

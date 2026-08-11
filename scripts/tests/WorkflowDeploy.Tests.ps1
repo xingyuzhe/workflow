@@ -110,11 +110,23 @@ try {
   Assert-True (-not (Test-Path (Join-Path $proj '.cursor\workflow\pack'))) "removes superseded Cursor pack"
   Assert-True (Test-Path (Join-Path $proj '.agents\skills\openspec-workflow\SKILL.md')) "installs Codex workflow skill"
   Assert-True (Test-Path (Join-Path $proj '.agents\skills\openspec-workflow\references\prompts\apply.md')) "installs Codex apply prompt"
-  Assert-True (Test-Path (Join-Path $proj '.agents\skills\openspec-workflow\references\gates\tdd.md')) "installs Codex TDD gate"
+  Assert-True (Test-Path (Join-Path $proj '.agents\skills\openspec-workflow\references\gates\acceptance.md')) "installs Codex acceptance contract"
+  Assert-True (@(Get-ChildItem -LiteralPath (Join-Path $proj '.workflow\pack\gates') -File).Count -eq 1) "installs only the shared acceptance contract"
+  foreach ($oldGate in @('tdd.md','debug.md','verify.md')) {
+    Assert-True (-not (Test-Path (Join-Path $proj ".workflow\pack\gates\$oldGate"))) "removes superseded source gate $oldGate"
+    Assert-True (-not (Test-Path (Join-Path $proj ".agents\skills\openspec-workflow\references\gates\$oldGate"))) "removes superseded Codex gate $oldGate"
+  }
   Assert-True (Test-Path (Join-Path $proj '.agents\rules\early-project.md')) "migrates project Cursor rule for Codex"
   $agents1 = Get-Content -Raw -Encoding utf8 (Join-Path $proj 'AGENTS.md')
   Assert-True ($agents1 -match 'Keep this custom guidance') "preserves project-owned AGENTS guidance"
   Assert-True ($agents1 -match 'BEGIN WORKFLOW MANAGED') "adds managed workflow guidance to AGENTS.md"
+  Assert-True ($agents1 -notmatch 'Bugs, test failures') "does not route unrelated debugging into OpenSpec"
+  $applyContract = Get-Content -Raw -Encoding utf8 (Join-Path $proj '.workflow\pack\prompts\apply.md')
+  Assert-True ($applyContract -match '## Preconditions' -and $applyContract -match '## Outputs' -and $applyContract -match '## Acceptance' -and $applyContract -match '## Stop conditions') "apply is a delivery contract"
+  Assert-True ($applyContract -notmatch 'RED|GREEN|REFACTOR|every 3 tasks') "apply does not prescribe generic implementation methods"
+  $schemaContract = Get-Content -Raw -Encoding utf8 (Join-Path $proj 'openspec\schemas\workflow-spec\schema.yaml')
+  Assert-True ($schemaContract -match 'This artifact is required because tasks depend on it') "schema makes change design unambiguously required"
+  Assert-True ($schemaContract -notmatch 'When to include design') "schema has no optional-design contradiction"
   Assert-True ($agents1 -match 'Read `\.agents/rules/early-project\.md` before any work \(always apply\)') "routes always-apply project rule"
   Assert-True ($agents1 -match 'apps/api/prisma/\*\*/\*.*docs/data/\*\*/\*') "routes path-scoped project rule"
   Assert-True ($agents1 -notmatch '\$\(') "renders project rule metadata without PowerShell expressions"
@@ -124,6 +136,11 @@ try {
   $cursorMcp1 = Get-Content -Raw -Encoding utf8 (Join-Path $proj '.cursor\mcp.json')
   Assert-True ($cursorMcp1 -match '"example\.mcp"') "generates Cursor MCP from neutral source"
   Assert-True (Test-Path (Join-Path $proj '.cursor\rules\early-project.mdc')) "generates Cursor rule from neutral source"
+
+  Set-Content -Encoding utf8 (Join-Path $proj '.workflow\pack\gates\tdd.md') 'superseded'
+  $oldGateResult = Invoke-WorkflowDoctor -ProjectRoot $proj
+  Assert-True ($oldGateResult.ExitCode -ne 0 -and (($oldGateResult.Errors -join "`n") -match 'superseded method gate')) "doctor rejects superseded method gates"
+  Remove-Item -LiteralPath (Join-Path $proj '.workflow\pack\gates\tdd.md') -Force
   Assert-True (Test-Path (Join-Path $proj '.workflow\version.json')) "writes one neutral version authority"
   Assert-True (-not (Test-Path (Join-Path $proj '.cursor\workflow\version.json'))) "does not duplicate Cursor metadata"
   Assert-True (-not (Test-Path (Join-Path $proj '.agents\workflow\version.json'))) "does not duplicate Codex metadata"
@@ -220,7 +237,7 @@ try {
   Assert-True ($projCfg1 -match 'Keep my private rule forever') "migrated private rule into project file"
   $merged1 = Get-Content -Raw (Join-Path $proj2 'openspec\config.yaml')
   Assert-True ($merged1 -match 'Keep my private rule forever') "merged config includes private rule"
-  Assert-True ($merged1 -match 'workflow-spec|Both spec|Own Why|create BOTH|Never leave') "merged includes workflow rules"
+  Assert-True ($merged1 -notmatch 'Both spec|Own Why|create BOTH|Never leave') "merged config does not duplicate schema artifact contracts"
 
   @(
     'schema: workflow-spec',

@@ -1,22 +1,31 @@
-﻿# Archive change
+# Archive contract
 
-Archive a completed change and keep main specs paired.
+## Preconditions
 
-## Steps
+- The user explicitly authorized archive.
+- Verification passed, or the user explicitly accepted recorded residual risk.
 
-1. Confirm tasks complete (`openspec status`) and verify done (or user accepts residual risk).
-2. Archive with OpenSpec CLI, e.g.:
-   ```text
-   openspec archive <name> -y
-   ```
-3. **Pairing gate:** after archive, inspect `openspec/specs/<capability>/`. If any capability has `spec.md` without `design.md` (or the reverse), copy the missing file from `openspec/changes/archive/<dated-name>/specs/<capability>/` immediately.
-4. Run `pwsh -File scripts/doctor.ps1` — must not report `spec/design pair incomplete`.
-5. Clear stale local state: delete `.workflow/state.json`, or set `active_change`/`phase`/`branch` to null — it is **not** authoritative vs `openspec status`/`list`.
-6. Load `finish.md` for merge / PR / keep / discard. Wait for the user.
+## Inputs
 
-## Done when
+- Completed change, authoritative OpenSpec status, and main specs.
 
-- Change lives under `openspec/changes/archive/`.
-- Main specs for this change are fully paired.
-- Local `state.json` no longer points at the archived change.
-- User has been presented finish options.
+## Outputs
+
+- Change moved under `openspec/changes/archive/`.
+- Accepted deltas represented in complete main capability pairs.
+- Optional local state no longer points to the archived change.
+- `finish.md` presented when branch disposition remains undecided.
+
+## Acceptance
+
+- OpenSpec recognizes the archive.
+- Doctor passes after archive.
+- Main specs and archived artifacts are coherent.
+
+## Stop conditions
+
+- Stop before archive when authorization, verification disposition, or spec synchronization is unresolved.
+
+## Authority
+
+- Archive does not authorize merge, push, or branch deletion.

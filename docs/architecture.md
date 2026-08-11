@@ -1,6 +1,6 @@
 # Workflow 架构
 
-当前版本：`3.0.0`。Workflow 面向 Cursor 与 Codex 提供同一套 OpenSpec 生命周期、短 prompt 和 apply 质量门禁。
+当前版本：`3.1.0`。Workflow 面向 Cursor 与 Codex 提供同一套 OpenSpec 生命周期契约：规定输入、产物、验收、停止条件和授权边界，默认不规定 agent 的具体操作方法。
 
 ## 单一事实来源
 
@@ -38,7 +38,7 @@
 
 客户端文件是生成物，不互相作为输入。规则生成器仅删除 `.workflow-managed.json` 明确记录的旧文件；`AGENTS.md` 和 Codex TOML 只更新 managed block，保留块外项目内容。
 
-Codex skill 的 `SKILL.md` 保持精简，详细 prompts/gates 从中立 pack 生成到 references，按操作渐进加载。
+Codex skill 的 `SKILL.md` 只负责生命周期路由；详细操作契约从中立 pack 生成到 references，按操作渐进加载。普通 bug 与测试失败不由该 skill 捕获，除非发生在活跃生命周期操作内。
 
 ## MCP
 
@@ -65,10 +65,10 @@ pwsh -File scripts/doctor.ps1 -ProjectRoot path\to\project -Fix
 
 默认 Doctor 不自动同步 `config.yaml`，因此陈旧合并结果会作为 drift 报告。
 
-## 质量门禁
+## 交付与验收契约
 
-- TDD：逻辑修改必须 RED → GREEN → REFACTOR。
-- Verify：完成任务前保留运行证据。
-- Debug：失败后先复现、提出假设并做最小验证。
+操作 prompt 只定义前置条件、输入、产物、验收、停止条件和授权边界。`.workflow/pack/gates/acceptance.md` 要求在完成任务或报告成功前提供与变更风险相称的证据。
 
-这些规则来自 `.workflow/pack/gates/`，Cursor 与 Codex 使用同一源。
+Shared workflow 不规定 TDD、调试顺序、测试频率或重试次数。具体方法由 agent 结合项目规则、工具协议、active change artifacts 与任务风险选择；项目确有强约束时，应通过项目规则精确限定适用范围。
+
+Doctor 负责检查 acceptance contract 存在，并拒绝已废弃的 `tdd.md`、`debug.md`、`verify.md` workflow gate。
