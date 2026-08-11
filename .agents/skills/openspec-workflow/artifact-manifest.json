@@ -1,6 +1,6 @@
 ﻿{
     "schemaVersion":  1,
-    "version":  "4.0.0",
+    "version":  "4.0.1",
     "files":  [
                   {
                       "path":  "agents/openai.yaml",
@@ -28,7 +28,7 @@
                   },
                   {
                       "path":  "references/prompts/doctor.md",
-                      "sha256":  "566896A6315B94EA46CBD48CD8D0267C66498E5962E7160445DD2368B49A4D6E"
+                      "sha256":  "2F63DBA2B68DAC76330EEB029359CDF8F5528532957DB01F1378C46E7F368534"
                   },
                   {
                       "path":  "references/prompts/explore.md",

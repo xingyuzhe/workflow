@@ -363,6 +363,10 @@ try {
   Assert-True (Test-Path (Join-Path $published '.agents\rules\private.md')) "publication preserves private rules"
   Assert-True (Test-Path (Join-Path $published '.agents\skills\private-skill\SKILL.md')) "publication preserves unrelated skills"
   Assert-True (Test-Path (Join-Path $published '.agents\skills\openspec-workflow\artifact.json')) "publication includes artifact metadata"
+  $doctorContract=Get-Content -Raw (Join-Path $repoRoot '.workflow\pack\prompts\doctor.md')
+  Assert-True ($doctorContract -match 'check-deployment\.ps1') "doctor contract routes to source-owned checker"
+  Assert-True ($doctorContract -notmatch 'pwsh -File scripts/doctor\.ps1') "doctor contract does not reference deleted downstream checker"
+  Assert-True ($doctorContract -match 'Do not expect or recreate `\.workflow`') "doctor contract preserves artifact-only boundary"
   $artifactDoctor=Invoke-WorkflowArtifactDoctor -ProjectRoot $published -SourceRoot $repoRoot
   if($artifactDoctor.ExitCode -ne 0){$artifactDoctor.Errors|%{Write-Host "ARTIFACT DOCTOR: $_" -ForegroundColor Yellow}}
   Assert-True ($artifactDoctor.ExitCode -eq 0) "artifact Doctor passes against source artifact"
