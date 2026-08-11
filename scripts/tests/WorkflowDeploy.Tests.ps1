@@ -340,6 +340,33 @@ try {
   Repair-WorkflowInstall -ProjectRoot $codexOnly
   Assert-True ((&$cursorFingerprint) -eq $cursorBefore) "Codex-only repair preserves installed client scope"
 
+  # Published downstream repositories receive only the built artifact, never its neutral source.
+  Build-WorkflowCodexArtifact -SourceRoot $repoRoot | Out-Null
+  $published = Join-Path $tmp 'published-artifact'
+  New-Item -ItemType Directory -Force -Path (Join-Path $published '.agents\rules') | Out-Null
+  New-Item -ItemType Directory -Force -Path (Join-Path $published '.agents\skills\private-skill') | Out-Null
+  New-Item -ItemType Directory -Force -Path (Join-Path $published '.workflow\pack') | Out-Null
+  New-Item -ItemType Directory -Force -Path (Join-Path $published 'scripts\lib') | Out-Null
+  Set-Content -Encoding utf8 (Join-Path $published '.agents\rules\private.md') 'private rule'
+  Set-Content -Encoding utf8 (Join-Path $published '.agents\skills\private-skill\SKILL.md') 'private skill'
+  Set-Content -Encoding utf8 (Join-Path $published '.workflow\pack\source.md') 'must not ship'
+  Set-Content -Encoding utf8 (Join-Path $published '.agents\rules\.workflow-managed.json') '{"files":[]}'
+  Set-Content -Encoding utf8 (Join-Path $published 'scripts\init.ps1') 'Install-WorkflowV2'
+  Set-Content -Encoding utf8 (Join-Path $published 'scripts\doctor.ps1') 'Invoke-WorkflowDoctor'
+  Set-Content -Encoding utf8 (Join-Path $published 'scripts\lib\WorkflowDeploy.psm1') 'WorkflowVersion'
+  Publish-WorkflowCodexArtifact -SourceRoot $repoRoot -TargetRoot $published
+  Assert-True (-not(Test-Path (Join-Path $published '.workflow'))) "publication removes downstream neutral source"
+  Assert-True (-not(Test-Path (Join-Path $published '.agents\rules\.workflow-managed.json'))) "publication removes empty generated rule index"
+  Assert-True (-not(Test-Path (Join-Path $published 'scripts\init.ps1'))) "publication removes deployment init source"
+  Assert-True (-not(Test-Path (Join-Path $published 'scripts\doctor.ps1'))) "publication removes deployment doctor source"
+  Assert-True (-not(Test-Path (Join-Path $published 'scripts\lib\WorkflowDeploy.psm1'))) "publication removes deployment module source"
+  Assert-True (Test-Path (Join-Path $published '.agents\rules\private.md')) "publication preserves private rules"
+  Assert-True (Test-Path (Join-Path $published '.agents\skills\private-skill\SKILL.md')) "publication preserves unrelated skills"
+  Assert-True (Test-Path (Join-Path $published '.agents\skills\openspec-workflow\artifact.json')) "publication includes artifact metadata"
+  $artifactDoctor=Invoke-WorkflowArtifactDoctor -ProjectRoot $published -SourceRoot $repoRoot
+  if($artifactDoctor.ExitCode -ne 0){$artifactDoctor.Errors|%{Write-Host "ARTIFACT DOCTOR: $_" -ForegroundColor Yellow}}
+  Assert-True ($artifactDoctor.ExitCode -eq 0) "artifact Doctor passes against source artifact"
+
 } finally {
   Remove-Item -Recurse -Force $tmp -ErrorAction SilentlyContinue
 }

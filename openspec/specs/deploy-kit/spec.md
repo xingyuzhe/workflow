@@ -7,68 +7,64 @@ Deploy and validate the platform-neutral Workflow runtime for Cursor and Codex.
 ## Requirements
 
 ### Requirement: Generate client adapters from neutral source
-Init SHALL copy the workflow-owned `.workflow/pack`, preserve project-owned `.workflow/mcp.json`, `.workflow/rules.json`, and `.workflow/rules/`, then generate only the selected client runtime assets. Client adapter files SHALL NOT be used as source input.
+Build SHALL generate client artifacts from the workflow-owned `.workflow` source. The workflow repository SHALL retain both the editable neutral source and generated artifacts so it exercises the same Codex artifact that it publishes. Client adapter files SHALL NOT be used as source input.
 
-#### Scenario: Default project init
-- **WHEN** init runs with `-Yes`
-- **THEN** both clients SHALL receive deterministic adapters generated from `.workflow`
+#### Scenario: Build the workflow repository
+- **WHEN** build runs after a neutral contract changes
+- **THEN** the repository's Codex artifact SHALL be regenerated deterministically from `.workflow`
 
-### Requirement: Client-scoped deployment
+### Requirement: Artifact-only downstream publication
 
-Init SHALL accept an explicit set of clients. It SHALL generate, clean, repair, and validate only the selected client adapters while continuing to install the neutral shared core.
+Publish SHALL copy the generated Codex artifact and required standard-path OpenSpec integration outputs. It SHALL NOT copy `.workflow` or the workflow deployment engine downstream.
 
-#### Scenario: Codex-only deployment
+#### Scenario: Publish Codex artifact
 
-- **WHEN** init runs with `-Clients codex`
-- **THEN** Codex assets SHALL be generated and the `.cursor` tree SHALL remain byte-for-byte unchanged
+- **WHEN** publish runs for a downstream repository
+- **THEN** `.agents/skills/openspec-workflow` SHALL match the source artifact and `.workflow` SHALL be absent
 
-### Requirement: Persistent installation scope
+### Requirement: Preserve project-owned agents content
 
-Deployment metadata SHALL record the installed client set. Repair and Doctor SHALL use that set when no explicit client set is provided.
+Publish SHALL modify only its managed skill namespace and bounded integration outputs. It SHALL preserve project-owned rules and unrelated skills.
 
-#### Scenario: Repair Codex-only installation
+#### Scenario: Project has private agents assets
 
-- **WHEN** repair runs without a client argument after a Codex-only install
-- **THEN** it SHALL repair Codex assets without adopting Cursor assets
+- **WHEN** publication runs
+- **THEN** private `.agents/rules` and unrelated `.agents/skills` SHALL remain unchanged
 
 ### Requirement: Strict structured source
-Init SHALL reject unknown fields, invalid types, unsafe paths, duplicate rules, and transport definitions missing required fields.
+Build SHALL reject unknown fields, invalid types, unsafe paths, duplicate rules, and transport definitions missing required fields.
 
 #### Scenario: Unknown MCP field
 - **WHEN** a server contains an unsupported field
 - **THEN** init SHALL fail naming that field
 
 ### Requirement: Preserve project-owned surroundings
-Init SHALL update only indexed generated files and marked managed blocks. It SHALL preserve `AGENTS.md` and `.codex/config.toml` content outside managed blocks and SHALL NOT broadly delete unindexed rule files.
+Publish SHALL update only its named artifact namespace and marked managed blocks. It SHALL preserve `AGENTS.md` and `.codex/config.toml` content outside managed blocks and SHALL NOT broadly delete project-owned rules or unrelated skills.
 
 #### Scenario: Reinstall
-- **WHEN** init runs twice
+- **WHEN** publish runs twice
 - **THEN** exactly one managed block SHALL remain and project-owned surrounding content SHALL be unchanged
 
 ### Requirement: Isolate and merge OpenSpec config
-Init SHALL overwrite `config.workflow.yaml`, preserve `config.project.yaml`, and generate `config.yaml`. A missing project config MAY be initialized or migrated from an existing bare `config.yaml`. Business specs SHALL remain untouched.
+Publish SHALL overwrite `config.workflow.yaml`, preserve `config.project.yaml`, and generate `config.yaml`. A missing project config MAY be initialized or migrated from an existing bare `config.yaml`. Business specs SHALL remain untouched.
 
 #### Scenario: Stale merged config
 - **WHEN** project config changes after install
 - **THEN** default Doctor SHALL report drift without modifying `config.yaml`
 
 ### Requirement: Read-only Doctor and explicit repair
-Doctor SHALL be read-only by default and SHALL compare generated rules, commands, MCP config, managed blocks, skill references, metadata, OpenSpec merged config, and spec/design pairs. `doctor -Fix` SHALL explicitly regenerate workflow-owned outputs and rerun strict validation.
+Artifact Doctor SHALL be read-only and SHALL compare the complete published skill against the source artifact, validate artifact metadata, require downstream neutral source to be absent, and check local OpenSpec schema and spec/design pairs.
 
 #### Scenario: Generated file drift
 - **WHEN** an adapter differs from canonical source
 - **THEN** Doctor SHALL fail and leave the file unchanged
 
-#### Scenario: Explicit fix
-- **WHEN** Doctor runs with `-Fix`
-- **THEN** it SHALL repair owned output and pass only after a subsequent strict check succeeds
-
 ### Requirement: Single metadata authority
-Deploy SHALL write version and manifest only under `.workflow`. Runtime state SHALL exist only at `.workflow/state.json`. Superseded client metadata, state, and `.cursor/workflow/pack` SHALL be removed and cause Doctor failure if reintroduced.
+The workflow source SHALL keep source metadata under `.workflow`. The generated Codex artifact SHALL keep published version and manifest inside `.agents/skills/openspec-workflow`. A downstream repository SHALL contain only artifact metadata and SHALL NOT contain `.workflow` metadata or source.
 
-#### Scenario: Successful init
-- **WHEN** init completes
-- **THEN** `.workflow/version.json` and `.workflow/manifest.json` SHALL match the installed version and no client metadata copy SHALL remain
+#### Scenario: Successful publication
+- **WHEN** publication completes
+- **THEN** artifact metadata SHALL match the source artifact and no downstream `.workflow` directory SHALL remain
 
 ### Requirement: Local schema validation
 Doctor SHALL validate the project-local workflow schema and spec/design pairs. When OpenSpec CLI is available it SHALL additionally verify project-local schema resolution; it SHALL NOT use a machine/version-specific executable fallback.

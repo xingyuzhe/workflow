@@ -2,20 +2,18 @@
 
 ## Responsibilities
 
-- Copy workflow-owned neutral assets while preserving project-owned neutral configuration.
-- Generate only the selected Cursor and/or Codex adapters.
-- Maintain exact ownership indexes and managed blocks.
-- Separate read-only validation from explicit repair.
+- Build generated client artifacts from workflow-owned neutral source.
+- Publish the self-contained Codex artifact without publishing neutral source.
+- Preserve project-owned rules, unrelated skills, configuration surroundings, and business specs.
+- Validate published artifacts against the source artifact.
 
 ## Interfaces
 
-- `scripts/init.ps1 -Target <path> [-Clients cursor,codex] -Yes`
-- `scripts/doctor.ps1 -ProjectRoot <path>`
-- `scripts/doctor.ps1 -ProjectRoot <path> -Fix`
-- `Install-WorkflowV2`, `Invoke-WorkflowDoctor`, `Repair-WorkflowInstall`
+- `scripts/build.ps1`
+- `scripts/deploy.ps1 -Target <path> -Yes`
+- `Build-WorkflowCodexArtifact`, `Publish-WorkflowCodexArtifact`
+- `Invoke-WorkflowArtifactDoctor`
 
 ## Safety
 
-Generated rule cleanup is restricted to relative paths recorded in `.workflow-managed.json`. Legacy deletion is limited to explicitly workflow-owned pack, metadata, and state paths. Mixed-ownership files use bounded markers.
-
-Client names are normalized once and passed through generation, cleanup, metadata, and validation. Shared core installation is independent of client selection. Installed metadata supplies the default scope for subsequent Doctor and repair operations. An unselected client tree is outside the operation's ownership boundary.
+The workflow repository retains `.workflow` plus its generated `.agents` artifact. Downstream publication copies only the artifact namespace and required OpenSpec standard-path integration. Migration removes the previously published `.workflow`, empty generated-rule index, and deployment-engine scripts. Mixed-ownership files use bounded markers.

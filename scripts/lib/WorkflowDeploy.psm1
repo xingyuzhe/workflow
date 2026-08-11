@@ -1,6 +1,6 @@
 # WorkflowDeploy.psm1 — platform-neutral workflow deployment
 
-$script:WorkflowVersion = '3.2.0'
+$script:WorkflowVersion = '4.0.0'
 $script:WorkflowAgentsStart = '<!-- BEGIN WORKFLOW MANAGED -->'
 $script:WorkflowAgentsEnd = '<!-- END WORKFLOW MANAGED -->'
 $script:WorkflowCodexConfigStart = '# BEGIN WORKFLOW MANAGED MCP'
@@ -163,8 +163,7 @@ function Install-WorkflowCodexSkill {
     $dstDir = Join-Path $refs $kind
     New-Item -ItemType Directory -Force -Path $dstDir | Out-Null
     Get-ChildItem -LiteralPath $srcDir -File -Filter '*.md' | ForEach-Object {
-      $text = Read-WorkflowUtf8Text -Path $_.FullName
-      Write-WorkflowUtf8Text -Path (Join-Path $dstDir $_.Name) -Text $text
+      Copy-Item -LiteralPath $_.FullName -Destination (Join-Path $dstDir $_.Name) -Force
     }
   }
 }
@@ -597,7 +596,7 @@ function Write-WorkflowMetadata {
   Write-WorkflowUtf8Text (Join-Path $wf 'version.json') (([ordered]@{version=$script:WorkflowVersion;schema='workflow-spec';engine='powershell';clients=$Clients}|ConvertTo-Json)+"`n")
   $files=@('.workflow/pack','.workflow/mcp.json','.workflow/rules.json')
   if($Clients -contains 'cursor'){$files+=@('.cursor/mcp.json','.cursor/rules/workflow-router.mdc','.cursor/commands')}
-  if($Clients -contains 'codex'){$files+=@('.codex/config.toml','AGENTS.md','.agents/skills/openspec-workflow/SKILL.md')}
+  if($Clients -contains 'codex'){$files+=@('.codex/config.toml','AGENTS.md','.agents/skills/openspec-workflow/SKILL.md','.agents/skills/openspec-workflow/artifact.json','.agents/skills/openspec-workflow/artifact-manifest.json')}
   Write-WorkflowUtf8Text (Join-Path $wf 'manifest.json') (([ordered]@{version=$script:WorkflowVersion;files=$files}|ConvertTo-Json -Depth 5)+"`n")
 }
 
@@ -828,6 +827,115 @@ function Invoke-WorkflowDoctor {
   }
 }
 
+function Build-WorkflowCodexArtifact {
+  param([Parameter(Mandatory)][string]$SourceRoot)
+  $SourceRoot=Resolve-WorkflowPath $SourceRoot
+  Install-WorkflowCodexSkill -SourceRoot $SourceRoot -TargetRoot $SourceRoot
+  $skill=Join-Path $SourceRoot '.agents/skills/openspec-workflow'
+  $files=@(Get-ChildItem -LiteralPath $skill -Recurse -File | Where-Object {$_.Name -notin @('artifact.json','artifact-manifest.json')} | Sort-Object FullName | ForEach-Object {
+    $rel=$_.FullName.Substring($skill.Length+1).Replace('\','/')
+    [ordered]@{path=$rel;sha256=(Get-FileHash -Algorithm SHA256 -LiteralPath $_.FullName).Hash}
+  })
+  Write-WorkflowUtf8Text (Join-Path $skill 'artifact.json') (([ordered]@{schemaVersion=1;name='openspec-workflow';version=$script:WorkflowVersion;source='.workflow/pack'}|ConvertTo-Json)+"`n")
+  Write-WorkflowUtf8Text (Join-Path $skill 'artifact-manifest.json') (([ordered]@{schemaVersion=1;version=$script:WorkflowVersion;files=$files}|ConvertTo-Json -Depth 5)+"`n")
+  Write-WorkflowMetadata -ProjectRoot $SourceRoot -Clients @('cursor','codex')
+  return $skill
+}
+
+function Test-WorkflowCodexArtifact {
+  param([Parameter(Mandatory)][string]$SkillRoot)
+  foreach($name in @('SKILL.md','agents/openai.yaml','artifact.json','artifact-manifest.json')){if(-not(Test-Path -LiteralPath (Join-Path $SkillRoot $name) -PathType Leaf)){throw "artifact missing: $name"}}
+  $meta=Read-WorkflowJsonFile (Join-Path $SkillRoot 'artifact.json')
+  if($meta.version -ne $script:WorkflowVersion){throw "artifact version drift: expected $script:WorkflowVersion, got $($meta.version)"}
+  $manifest=Read-WorkflowJsonFile (Join-Path $SkillRoot 'artifact-manifest.json')
+  if($manifest.version -ne $script:WorkflowVersion){throw 'artifact manifest version drift'}
+  foreach($entry in @($manifest.files)){
+    $rel="$($entry.path)".Replace('\','/')
+    if(-not $rel -or $rel.StartsWith('/') -or $rel -match '(^|/)\.\.(/|$)'){throw "unsafe artifact path: $rel"}
+    $path=Join-Path $SkillRoot $rel
+    if(-not(Test-Path -LiteralPath $path -PathType Leaf)){throw "artifact file missing: $rel"}
+    $actual=(Get-FileHash -Algorithm SHA256 -LiteralPath $path).Hash
+    if($actual -ne "$($entry.sha256)"){throw "artifact content drift: $rel"}
+  }
+}
+
+function Remove-WorkflowPublishedLegacyScripts {
+  param([Parameter(Mandatory)][string]$TargetRoot)
+  $candidates=@(
+    @{path='scripts/init.ps1';marker='Install-WorkflowV2'},
+    @{path='scripts/doctor.ps1';marker='Invoke-WorkflowDoctor'},
+    @{path='scripts/lib/WorkflowDeploy.psm1';marker='WorkflowVersion'}
+  )
+  foreach($candidate in $candidates){
+    $path=Join-Path $TargetRoot $candidate.path
+    if(Test-Path -LiteralPath $path -PathType Leaf){
+      $text=Read-WorkflowUtf8Text $path
+      if($text -match [regex]::Escape($candidate.marker)){Remove-Item -LiteralPath $path -Force}
+    }
+  }
+  $lib=Join-Path $TargetRoot 'scripts/lib'
+  if((Test-Path -LiteralPath $lib -PathType Container) -and -not(Get-ChildItem -LiteralPath $lib -Force)){Remove-Item -LiteralPath $lib -Force}
+}
+
+function Publish-WorkflowCodexArtifact {
+  param(
+    [Parameter(Mandatory)][string]$SourceRoot,
+    [Parameter(Mandatory)][string]$TargetRoot
+  )
+  $SourceRoot=Resolve-WorkflowPath $SourceRoot;$TargetRoot=Resolve-WorkflowPath $TargetRoot
+  if(-not(Test-Path -LiteralPath $TargetRoot)){New-Item -ItemType Directory -Force -Path $TargetRoot|Out-Null}
+  $sourceSkill=Join-Path $SourceRoot '.agents/skills/openspec-workflow'
+  Test-WorkflowCodexArtifact $sourceSkill
+  Copy-WorkflowTree $sourceSkill (Join-Path $TargetRoot '.agents/skills/openspec-workflow')
+
+  Copy-WorkflowTree (Join-Path $SourceRoot 'openspec/schemas/workflow-spec') (Join-Path $TargetRoot 'openspec/schemas/workflow-spec')
+  Install-WorkflowOpenSpecConfigs -SourceRoot $SourceRoot -TargetRoot $TargetRoot
+  $null=Sync-WorkflowOpenSpecConfig -ProjectRoot $TargetRoot
+  Install-WorkflowAgentsGuidance -ProjectRoot $TargetRoot -RuleEntries @()
+  $servers=Get-WorkflowMcpServers $SourceRoot
+  $block=ConvertTo-WorkflowCodexMcpBlock $servers
+  Set-WorkflowManagedBlock (Join-Path $TargetRoot '.codex/config.toml') $script:WorkflowCodexConfigStart $script:WorkflowCodexConfigEnd $block
+
+  $agentRules=Join-Path $TargetRoot '.agents/rules';$agentIndex=Join-Path $agentRules '.workflow-managed.json'
+  if(Test-Path -LiteralPath $agentIndex -PathType Leaf){Remove-WorkflowIndexedFiles $agentRules $agentIndex;Remove-Item -LiteralPath $agentIndex -Force}
+  $neutral=Join-Path $TargetRoot '.workflow'
+  if(Test-Path -LiteralPath $neutral -PathType Container){Remove-Item -LiteralPath $neutral -Recurse -Force}
+  Remove-WorkflowPublishedLegacyScripts $TargetRoot
+}
+
+function Invoke-WorkflowArtifactDoctor {
+  param(
+    [Parameter(Mandatory)][string]$ProjectRoot,
+    [string]$SourceRoot=''
+  )
+  $ProjectRoot=Resolve-WorkflowPath $ProjectRoot
+  $errors=New-Object System.Collections.Generic.List[string]
+  if(Test-Path -LiteralPath (Join-Path $ProjectRoot '.workflow')){$errors.Add('downstream source layout present: .workflow')}
+  if(Test-Path -LiteralPath (Join-Path $ProjectRoot '.agents/rules/.workflow-managed.json')){$errors.Add('superseded generated rule index present: .agents/rules/.workflow-managed.json')}
+  $skill=Join-Path $ProjectRoot '.agents/skills/openspec-workflow'
+  try{Test-WorkflowCodexArtifact $skill}catch{$errors.Add($_.Exception.Message)}
+  foreach($candidate in @(@('scripts/init.ps1','Install-WorkflowV2'),@('scripts/doctor.ps1','Invoke-WorkflowDoctor'),@('scripts/lib/WorkflowDeploy.psm1','WorkflowVersion'))){
+    $path=Join-Path $ProjectRoot $candidate[0]
+    if((Test-Path -LiteralPath $path -PathType Leaf) -and (Read-WorkflowUtf8Text $path) -match [regex]::Escape($candidate[1])){$errors.Add("deployment engine present downstream: $($candidate[0])")}
+  }
+  if($SourceRoot){
+    $SourceRoot=Resolve-WorkflowPath $SourceRoot;$sourceSkill=Join-Path $SourceRoot '.agents/skills/openspec-workflow'
+    try{Test-WorkflowCodexArtifact $sourceSkill}catch{$errors.Add("source artifact invalid: $($_.Exception.Message)")}
+    if(Test-Path -LiteralPath $sourceSkill){
+      $sourceFiles=@(Get-ChildItem -LiteralPath $sourceSkill -Recurse -File|%{$_.FullName.Substring($sourceSkill.Length+1).Replace('\','/')})
+      $targetFiles=@(Get-ChildItem -LiteralPath $skill -Recurse -File -ErrorAction SilentlyContinue|%{$_.FullName.Substring($skill.Length+1).Replace('\','/')})
+      foreach($rel in @($sourceFiles+$targetFiles|Sort-Object -Unique)){
+        $s=Join-Path $sourceSkill $rel;$t=Join-Path $skill $rel
+        if(-not(Test-Path -LiteralPath $s) -or -not(Test-Path -LiteralPath $t)){$errors.Add("published artifact file set drift: $rel")}
+        elseif((Get-FileHash -Algorithm SHA256 -LiteralPath $s).Hash -ne (Get-FileHash -Algorithm SHA256 -LiteralPath $t).Hash){$errors.Add("published artifact content drift: $rel")}
+      }
+    }
+  }
+  foreach($e in (Get-WorkflowSpecPairErrors $ProjectRoot)){$errors.Add($e)}
+  $schema=Join-Path $ProjectRoot 'openspec/schemas/workflow-spec/schema.yaml';if(-not(Test-Path -LiteralPath $schema -PathType Leaf)){$errors.Add('missing: openspec/schemas/workflow-spec/schema.yaml')}
+  return [pscustomobject]@{ExitCode=if($errors.Count){1}else{0};Errors=$errors.ToArray()}
+}
+
 function Write-WorkflowState {
   param(
     [Parameter(Mandatory)][string]$ProjectRoot,
@@ -857,6 +965,9 @@ Export-ModuleMember -Function @(
   'Resolve-WorkflowPath',
   'Resolve-WorkflowClients',
   'Get-WorkflowInstalledClients',
+  'Build-WorkflowCodexArtifact',
+  'Publish-WorkflowCodexArtifact',
+  'Invoke-WorkflowArtifactDoctor',
   'Get-WorkflowNamespaceSkillDirs',
   'Remove-WorkflowNamespaceSkills',
   'Remove-WorkflowOwnedEntries',
