@@ -1,23 +1,30 @@
-# schema-pack 模块设计
+# schema-pack Design
 
-## 职责
-`workflow-spec` 浅 fork、SSOT/配对规则（模板 + config）、与 OpenSpec CLI 的路径契约。
+## Responsibility
 
-## 文件结构
+Provide the authoritative artifact graph, parser-sensitive content contract, and deterministic pair validation.
+
+## Structure
+
+```text
+openspec/schemas/workflow-spec/schema.yaml
+openspec/schemas/workflow-spec/templates/
+openspec/config.workflow.yaml
+openspec/config.project.yaml
+openspec/config.yaml
+scripts/doctor.ps1
 ```
-openspec/schemas/workflow-spec/   # SSOT；init 同步到目标同路径
-openspec/config.workflow.yaml     # 工作流模板；init 可覆盖
-openspec/config.project.yaml      # 项目私有；init 永不覆盖
-openspec/config.yaml              # 合并产物（CLI 读取）
-```
 
-## 关键类型 / 接口
-- Schema 名：`workflow-spec`
-- 配对：规范约束（prompts/rules），非 CLI 硬校验
+## Interfaces
 
-## 与其它模块的关系
-- runtime / design-review 消费 artifacts
-- deploy-kit 安装 schema 目录并合并 config
+- OpenSpec reads schema dependencies and instructions.
+- `config.workflow.yaml` selects the workflow schema.
+- `config.project.yaml` owns project-private rules; generated `config.yaml` merges configuration.
+- Doctor checks filesystem invariants that the schema graph cannot express.
+- Prompts reference artifact readiness and do not duplicate schema instructions.
 
-## 本次变更的设计决策
-- 见 change design D2、D5（config 覆盖）、D9（不删业务 specs）
+## Relationships
+
+- `workflow-runtime` routes operations.
+- `quality-gates` decides when produced work may be claimed complete.
+- Deploy-kit installs the schema and config source files.

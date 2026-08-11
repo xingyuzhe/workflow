@@ -1,12 +1,28 @@
 # workflow-runtime Design
 
+## Responsibility
+
+Route explicit lifecycle intent to compact, platform-neutral delivery contracts.
+
+## Structure
+
 ```text
-.workflow/pack
-├── prompts/*.md
-└── gates/{tdd,verify,debug}.md
-        │
-        ├── Cursor commands + router
-        └── Codex skill references + AGENTS routing
+.workflow/pack/
+  prompts/*.md
+  gates/acceptance.md
+        |
+        +-- Cursor commands/router
+        +-- Codex skill references/AGENTS routing
 ```
 
-The neutral pack contains no client-owned state path. Both adapters refer to `.workflow/state.json`. Codex keeps the skill body concise and progressively loads only the required operation and gates.
+## Interfaces
+
+- Prompts define lifecycle inputs, outputs, acceptance, stop conditions, and authority.
+- `acceptance.md` defines shared completion evidence.
+- Project rules and active artifacts may add targeted method constraints.
+- Optional local state lives only at `.workflow/state.json`; OpenSpec status remains authoritative.
+
+## Relationships
+
+- `schema-pack` owns artifact syntax and dependencies.
+- `quality-gates` owns completion evidence semantics.

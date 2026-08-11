@@ -1,21 +1,20 @@
-# quality-gates 模块设计
+# quality-gates Design
 
-## 职责
-apply 阶段三条硬门禁：TDD、完成前验证、系统化调试。
+## Responsibility
 
-## 文件结构
+Define evidence required to claim work complete without dictating how the work is performed.
+
+## Structure
+
+```text
+.workflow/pack/gates/acceptance.md
 ```
-.workflow/pack/gates/
-  tdd.md
-  verify.md
-  debug.md
-```
 
-## 关键类型 / 接口
-- 无独立命令；由 `pack/prompts/apply.md` 强制引用
+## Interface
 
-## 与其它模块的关系
-- 被 workflow-runtime apply 路径引用
+Apply and verify load the acceptance contract. Other operations carry their own output-specific acceptance criteria.
 
-## 本次变更的设计决策
-- 见 change design D3；非技能框架、无 v1 skill 路径依赖
+## Relationships
+
+- Project rules and active artifacts can add narrower methods when the domain requires them.
+- Doctor rejects superseded method gates in the neutral source.

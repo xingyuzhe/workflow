@@ -1,37 +1,36 @@
 # quality-gates Specification
 
 ## Purpose
-TBD - created by archiving change workflow-v2. Update Purpose after archive.
+
+Require evidence for delivery claims without prescribing generic implementation methods.
+
 ## Requirements
-### Requirement: TDD gate for logic changes
-When implementing a task that changes code logic (not pure docs/config/rename/version bump), the agent SHALL follow RED-GREEN-REFACTOR: write a failing test first, implement the minimum to pass, then refactor while green. When unsure whether TDD applies, the agent MUST ask the user before proceeding.
 
-#### Scenario: Logic task
-- **WHEN** a task adds or changes behavioral code
-- **THEN** the agent MUST produce a failing test before implementation code that makes it pass
+### Requirement: Evidence before completion
+Before marking a task complete or reporting a lifecycle operation successful, the agent SHALL obtain evidence appropriate to the changed behavior and risk. The workflow SHALL require the evidence and result, but SHALL NOT mandate TDD, a fixed debugging sequence, test cadence, or retry count.
 
-#### Scenario: Docs-only task
-- **WHEN** a task only updates documentation
-- **THEN** the TDD gate MUST NOT be required
+#### Scenario: Automated verification is available
+- **WHEN** relevant automated checks exist
+- **THEN** the agent MUST run the relevant checks and report their result before claiming completion
 
-### Requirement: Verification before completion
-Before marking any task checkbox complete (`[ ]` → `[x]`), the agent MUST capture runtime evidence that the task succeeded (test output or recorded manual verification). Phrases such as "should be fine" or "looks correct" without evidence SHALL NOT be accepted as completion.
+#### Scenario: Automated verification is unavailable
+- **WHEN** no relevant automated check exists
+- **THEN** the agent MUST record another concrete check or state the unverified residual explicitly
 
-#### Scenario: Mark task done
-- **WHEN** the agent is about to check off a task
-- **THEN** it MUST have already run relevant verification and retained evidence in the session output
+#### Scenario: Verification fails
+- **WHEN** a relevant verification check fails
+- **THEN** the affected task or operation MUST remain incomplete unless the user explicitly accepts the residual risk
 
-### Requirement: Systematic debugging on failure
-On errors, test failures, or unexpected behavior during apply, the agent SHALL NOT apply random fixes. It MUST reproduce, form a hypothesis, validate with a minimal check, then fix. After three failed fix attempts on the same issue, the agent MUST pause and report, suggesting artifact updates if the issue appears design-level.
+### Requirement: Method policy belongs to the project
+Shared workflow quality contracts SHALL NOT prescribe generic implementation or debugging methods. A project MAY require a specific method through project rules, active change artifacts, or tool protocols.
 
-#### Scenario: Test failure during apply
-- **WHEN** a test fails while implementing a task
-- **THEN** the agent MUST enter the debug gate sequence before further speculative code changes
+#### Scenario: Project requires TDD
+- **WHEN** a project rule explicitly requires test-first development for the affected files
+- **THEN** the agent MUST follow that project rule without the shared workflow duplicating it
 
-### Requirement: Gates are not a skill framework
-Quality gates SHALL be delivered as short markdown gate files referenced by the apply prompt. The v2 runtime SHALL NOT require installing a Superpowers skill directory for TDD, verification, or debugging.
+### Requirement: Acceptance contract is not a skill framework
+The evidence contract SHALL be delivered as a short neutral gate referenced only by operations that complete or verify work. Deployments SHALL contain `gates/acceptance.md` and SHALL NOT contain workflow-owned `tdd.md`, `debug.md`, or `verify.md` gates.
 
-#### Scenario: Deployed project contents
-- **WHEN** a project is initialized with v2 deploy-kit defaults
-- **THEN** quality behavior MUST be available via pack gates without `.cursor/skills/superpowers/test-driven-development`
-
+#### Scenario: Deployed gate layout
+- **WHEN** a project is initialized or repaired
+- **THEN** its generated workflow references MUST contain `acceptance.md` and no superseded method gates
