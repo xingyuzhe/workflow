@@ -1,10 +1,10 @@
 ﻿---
 name: /opsx-doctor
 id: opsx-doctor
-category: Workflow
-description: Run workflow doctor
+category: OpenSpec
+description: Run OpenSpec doctor workflow
 ---
 
-Load and follow: `.cursor/workflow/pack/prompts/doctor.md`
+Load and follow: `.workflow/pack/prompts/doctor.md`
 
-If applying, also load all files under `.cursor/workflow/pack/gates/`.
+If applying, also load all files under `.workflow/pack/gates/`.

@@ -1,4 +1,4 @@
-﻿# TDD Gate (MUST for logic changes)
+# TDD Gate (MUST for logic changes)
 
 ## When required
 - Behavioral / logic code changes: **MUST** RED → GREEN → REFACTOR.

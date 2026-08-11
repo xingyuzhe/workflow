@@ -1,7 +1,7 @@
 ﻿{
-    "engine":  "powershell",
+    "version":  "3.0.0",
     "schema":  "workflow-spec",
-    "version":  "2.1.0",
+    "engine":  "powershell",
     "clients":  [
                     "cursor",
                     "codex"

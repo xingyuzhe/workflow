@@ -1,10 +1,10 @@
 ﻿---
 name: /opsx-apply
 id: opsx-apply
-category: Workflow
-description: Implement tasks from an OpenSpec change
+category: OpenSpec
+description: Run OpenSpec apply workflow
 ---
 
-Load and follow: `.cursor/workflow/pack/prompts/apply.md`
+Load and follow: `.workflow/pack/prompts/apply.md`
 
-If applying, also load all files under `.cursor/workflow/pack/gates/`.
+If applying, also load all files under `.workflow/pack/gates/`.

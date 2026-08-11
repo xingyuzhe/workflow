@@ -1,10 +1,10 @@
 ﻿---
 name: /opsx-new
 id: opsx-new
-category: Workflow
-description: Start a new OpenSpec change
+category: OpenSpec
+description: Run OpenSpec new workflow
 ---
 
-Load and follow: `.cursor/workflow/pack/prompts/new.md`
+Load and follow: `.workflow/pack/prompts/new.md`
 
-If applying, also load all files under `.cursor/workflow/pack/gates/`.
+If applying, also load all files under `.workflow/pack/gates/`.

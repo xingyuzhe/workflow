@@ -17,22 +17,25 @@ pwsh -File scripts/doctor.ps1 -ProjectRoot D:\work\your-project
 
 | 路径 | 作用 |
 |------|------|
-| `.cursor/workflow/pack/` | prompts + gates（源仓与部署同构） |
+| `.workflow/pack/` | 平台无关 prompts + gates（唯一 SSOT） |
+| `.workflow/mcp.json` | 平台无关 MCP 定义，生成 Cursor/Codex 配置 |
+| `.workflow/rules.json` · `.workflow/rules/` | 项目规则元数据与正文 SSOT |
+| `.workflow/version.json` · `manifest.json` · `state.json` | 单一元数据与状态权威 |
 | `openspec/schemas/workflow-spec/` | 默认 schema |
 | `openspec/config.workflow.yaml` | 工作流模板规则（init 可覆盖） |
 | `openspec/config.project.yaml` | 项目私有规则（init **永不**覆盖） |
-| `openspec/config.yaml` | 合并产物（CLI 只读；`doctor`/`init` 自动 sync，勿手改） |
+| `openspec/config.yaml` | 合并产物（`init` 或 `doctor -Fix` 生成，勿手改） |
 | `.cursor/rules/workflow-router.mdc` | 唯一 alwaysApply 路由 |
 | `.cursor/commands/opsx-*.md` | Cursor 命令 |
 | `AGENTS.md` 的 workflow managed block | Codex 持久路由；保留块外项目内容 |
 | `.agents/skills/openspec-workflow/` | Codex workflow skill 与按需 references |
-| `.agents/rules/` | 从项目自有 Cursor MDC 规则生成的 Codex 副本 |
-| `.codex/config.toml` 的 managed block | 从项目 `.cursor/mcp.json` 生成的 Codex MCP 配置 |
+| `.cursor/rules/` · `.agents/rules/` | 从中立规则源生成的客户端适配产物 |
+| `.cursor/mcp.json` · `.codex/config.toml` managed block | 从中立 MCP 源生成的客户端适配产物 |
 | `scripts/init.ps1` · `doctor.ps1` | 部署与健康检查 |
 
 ## 命令怎么用
 
-在 Cursor 里输入 `/opsx:…`，或在 Codex 里使用 `$openspec-workflow`、旧命令别名及同等自然语言意图。两端均路由到同一组上游 prompts/gates；Codex references 由 init 从 `.cursor/workflow/pack/` 确定性生成。
+在 Cursor 里输入 `/opsx:…`，或在 Codex 里使用 `$openspec-workflow`、旧命令别名及同等自然语言意图。两端均由 `.workflow/` 的中立源确定性生成。
 
 ### 推荐次序（一条变更）
 
@@ -61,6 +64,8 @@ explore（可选）
 | `/opsx:sync` | 把 change 里的 delta 同步到 `openspec/specs/`（必须 `spec.md`+`design.md`） | 需要主库先更新、或 archive 前补配对时用 |
 | `/opsx:archive` | 归档 change，并确保主规格成对；然后询问 merge/PR/保留/丢弃 | verify 通过（或你接受残留）后收尾 |
 | `/opsx:doctor` | 跑 `scripts/doctor.ps1`：布局、schema、配对、残留技能等 | 安装后、同步/归档后、或怀疑部署损坏时 |
+
+Doctor 默认只读；使用 `scripts/doctor.ps1 -Fix` 才会重新生成 workflow-owned 产物，然后再次严格检查。
 
 说明：
 

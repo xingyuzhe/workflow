@@ -4,7 +4,7 @@
 TBD - created by archiving change workflow-v2. Update Purpose after archive.
 ## Requirements
 ### Requirement: Grilling as pack short file
-Design review (grilling) SHALL be delivered as a short pack file at `.cursor/workflow/pack/prompts/grill.md`, not as a standalone Superpowers-style skill framework. The grilling command or intent SHALL load this file before questioning the user.
+Design review (grilling) SHALL be delivered as a short pack file at `.workflow/pack/prompts/grill.md`, not as a standalone skill framework. The generated client adapter SHALL load this file before questioning the user.
 
 #### Scenario: Start grill
 - **WHEN** the user invokes design review / grilling

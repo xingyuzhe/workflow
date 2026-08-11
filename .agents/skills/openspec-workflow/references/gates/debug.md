@@ -1,4 +1,4 @@
-﻿# Debug Gate (MUST on failures)
+# Debug Gate (MUST on failures)
 
 On errors, test failures, or unexpected behavior:
 

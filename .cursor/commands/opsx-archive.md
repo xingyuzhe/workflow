@@ -1,10 +1,10 @@
 ﻿---
 name: /opsx-archive
 id: opsx-archive
-category: Workflow
-description: Archive a completed change
+category: OpenSpec
+description: Run OpenSpec archive workflow
 ---
 
-Load and follow: `.cursor/workflow/pack/prompts/archive.md`
+Load and follow: `.workflow/pack/prompts/archive.md`
 
-If applying, also load all files under `.cursor/workflow/pack/gates/`.
+If applying, also load all files under `.workflow/pack/gates/`.

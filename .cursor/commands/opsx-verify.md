@@ -1,10 +1,10 @@
 ﻿---
 name: /opsx-verify
 id: opsx-verify
-category: Workflow
-description: Verify implementation against change artifacts
+category: OpenSpec
+description: Run OpenSpec verify workflow
 ---
 
-Load and follow: `.cursor/workflow/pack/prompts/verify.md`
+Load and follow: `.workflow/pack/prompts/verify.md`
 
-If applying, also load all files under `.cursor/workflow/pack/gates/`.
+If applying, also load all files under `.workflow/pack/gates/`.

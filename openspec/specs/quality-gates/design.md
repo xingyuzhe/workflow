@@ -5,7 +5,7 @@ apply 阶段三条硬门禁：TDD、完成前验证、系统化调试。
 
 ## 文件结构
 ```
-.cursor/workflow/pack/gates/
+.workflow/pack/gates/
   tdd.md
   verify.md
   debug.md

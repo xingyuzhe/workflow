@@ -1,5 +1,5 @@
 ﻿# AUTO-GENERATED - DO NOT EDIT.
-# Edit openspec/config.workflow.yaml / openspec/config.project.yaml; doctor/init auto-sync.
+# Edit openspec/config.workflow.yaml / openspec/config.project.yaml; init, explicit sync, or doctor -Fix regenerates this file.
 
 schema: workflow-spec
 

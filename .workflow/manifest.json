@@ -1,0 +1,12 @@
+﻿{
+    "version":  "3.0.0",
+    "files":  [
+                  ".workflow/pack",
+                  ".workflow/mcp.json",
+                  ".workflow/rules.json",
+                  ".cursor/mcp.json",
+                  ".codex/config.toml",
+                  "AGENTS.md",
+                  ".agents/skills/openspec-workflow/SKILL.md"
+              ]
+}

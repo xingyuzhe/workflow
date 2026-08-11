@@ -1,6 +1,6 @@
 # Apply — implement OpenSpec change tasks
 
-Read `.cursor/workflow/pack/gates/tdd.md`, `verify.md`, and `debug.md` before writing code. Follow them as MUST rules.
+Read `.workflow/pack/gates/tdd.md`, `verify.md`, and `debug.md` before writing code. Follow them as MUST rules.
 
 ## Steps
 
@@ -19,7 +19,7 @@ Read `.cursor/workflow/pack/gates/tdd.md`, `verify.md`, and `debug.md` before wr
 7. After every 3 tasks, run the project test suite (or record why none exists) and report.
 8. On all done: suggest `/opsx:verify` → `finish.md` → `/opsx:archive`. Wait for user decisions.
 
-If `state.json` exists under `.cursor/workflow/`, read it and reconcile with `openspec status` (CLI wins). Missing state must not block apply. Update state when useful (`phase: apply`).
+If `.workflow/state.json` exists, read it and reconcile with `openspec status` (CLI wins). Missing state must not block apply. Update state when useful (`phase: apply`).
 
 ## Done when
 

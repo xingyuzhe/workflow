@@ -1,4 +1,4 @@
-﻿# Verify Gate (MUST before completing a task)
+# Verify Gate (MUST before completing a task)
 
 Before marking any task checkbox `- [ ]` → `- [x]`:
 

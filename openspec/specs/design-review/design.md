@@ -5,7 +5,7 @@ grilling 压测设计；沉淀 `review-notes.md`。
 
 ## 文件结构
 ```
-.cursor/workflow/pack/prompts/grill.md
+.workflow/pack/prompts/grill.md
 openspec/changes/<name>/review-notes.md
 ```
 

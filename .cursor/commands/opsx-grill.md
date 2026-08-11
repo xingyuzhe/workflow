@@ -1,10 +1,10 @@
 ﻿---
 name: /opsx-grill
 id: opsx-grill
-category: Workflow
-description: Grill / design-review the active change
+category: OpenSpec
+description: Run OpenSpec grill workflow
 ---
 
-Load and follow: `.cursor/workflow/pack/prompts/grill.md`
+Load and follow: `.workflow/pack/prompts/grill.md`
 
-If applying, also load all files under `.cursor/workflow/pack/gates/`.
+If applying, also load all files under `.workflow/pack/gates/`.

@@ -1,10 +1,10 @@
 <#
 .SYNOPSIS
-  Install Workflow v2 into a target project (destructive).
+  Install the platform-neutral Workflow into a target project.
 .PARAMETER Target
   Target project root. Defaults to current directory.
 .PARAMETER Source
-  Workflow source root (contains .cursor/workflow/pack). Defaults to repo containing this script.
+  Workflow source root (contains .workflow/pack). Defaults to repo containing this script.
 .PARAMETER Yes
   Required non-interactive confirmation flag.
 #>

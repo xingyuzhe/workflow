@@ -12,8 +12,8 @@ Resolve the requested operation from the user intent or repository `AGENTS.md`.
 3. For `archive`, also read `references/prompts/finish.md`.
 4. For `apply`, read every file in `references/gates/` before writing production code and obey them as mandatory rules.
 5. On a test failure, error, or unexpected behavior, read and follow `references/gates/debug.md`.
-6. Read `.agents/workflow/state.json` when present, then reconcile it with `openspec status`; CLI output is authoritative.
+6. Read `.workflow/state.json` when present, then reconcile it with `openspec status`; CLI output is authoritative.
 
 Treat `/opsx:<operation>`, `/opsx-<operation>`, `$openspec-workflow <operation>`, and a clear natural-language request as equivalent.
 
-Do not hand-edit `openspec/config.yaml`. Keep every capability's `spec.md` and `design.md` paired. Respect `docs/ssot.md`, `openspec/config.yaml`, and the context files returned by `openspec instructions`. Stop for the user's decision where a prompt explicitly requires one.
+Do not hand-edit `openspec/config.yaml`. Keep every capability's `spec.md` and `design.md` paired. Respect `docs/ssot.md` when present, `openspec/config.yaml`, and the context files returned by `openspec instructions`. Stop for the user's decision where a prompt explicitly requires one.
