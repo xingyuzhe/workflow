@@ -1,22 +1,22 @@
 # Workflow — 架构与现状
 
-本仓库是给 Cursor 用的 **OpenSpec 流程产品**：命令驱动、自定义 schema、短 prompt 包，以及 apply 阶段的三条质量门禁。源仓布局与部署到目标项目后的布局相同。
+本仓库是面向 Cursor 与 Codex 的 **OpenSpec 流程产品**：命令/skill 驱动、自定义 schema、短 prompt 包，以及 apply 阶段的三条质量门禁。源仓是唯一上游，部署产物落到各目标项目。
 
-当前版本：`2.0.0`（见 `.cursor/workflow/version.json`）。
+当前版本：`2.1.0`（见 `.cursor/workflow/version.json` 与 `.agents/workflow/version.json`）。
 
 ---
 
 ## 定位
 
-- **是**：OpenSpec 变更生命周期编排 + Cursor `/opsx:*` 入口 + 质量门禁
-- **不是**：可发现的 Agent「技能操作系统」；不部署技能目录树作为运行时
+- **是**：OpenSpec 变更生命周期编排 + Cursor `/opsx:*` 入口 + Codex `$openspec-workflow` + 质量门禁
+- **不是**：通用 Agent「技能操作系统」；只部署本工作流所需的精简 Codex skill
 
 ---
 
 ## 架构
 
 ```
-/opsx:* 命令  +  workflow-router.mdc（唯一 alwaysApply）
+/opsx:* 命令 + workflow-router.mdc    $openspec-workflow + AGENTS.md
         │
         ▼
 .cursor/workflow/pack/
@@ -53,6 +53,12 @@ workflow/
 │   │   └── state.json             # gitignore；权威仍是 openspec status
 │   ├── rules/workflow-router.mdc
 │   └── commands/opsx-*.md
+├── .agents/
+│   ├── skills/openspec-workflow/    # Codex skill + 生成的 references
+│   ├── rules/                       # 项目 MDC 规则的 Codex 副本
+│   └── workflow/                    # Codex version / manifest / state
+├── .codex/config.toml               # MCP managed block（项目有 mcp.json 时）
+├── AGENTS.md                        # workflow managed block + 项目自有内容
 ├── scripts/
 │   ├── init.ps1
 │   ├── doctor.ps1
@@ -83,7 +89,7 @@ workflow/
 | `/opsx:archive` | `archive.md` + `finish.md` |
 | `/opsx:doctor` | `doctor.md` |
 
-意图路由见 `workflow-router.mdc`（例如「start coding」→ apply）。
+Cursor 意图路由见 `workflow-router.mdc`；Codex 路由见 `AGENTS.md` 与 skill metadata（例如「start coding」→ apply）。
 
 ### 质量门禁
 
@@ -103,7 +109,7 @@ workflow/
 
 ### 状态文件
 
-`.cursor/workflow/state.json`（可选维护）：`active_change`、`phase`、`branch`、`updated_at`。  
+`.cursor/workflow/state.json` 与 `.agents/workflow/state.json`（可选维护）：`active_change`、`phase`、`branch`、`updated_at`。
 与 `openspec status` 冲突时以 **CLI 为准**；缺失不阻断 apply。
 
 ---
@@ -124,6 +130,7 @@ pwsh -File scripts/doctor.ps1 -ProjectRoot path\to\project
 3. 同步 pack、router、commands、`workflow-spec` schema
 4. 覆盖 `openspec/config.workflow.yaml`；迁移/保留 `config.project.yaml`；合并生成 `config.yaml`
 5. 写入 version / manifest，并跑 doctor（失败则非零退出）
+6. 安装 Codex skill，合并 `AGENTS.md` managed block，迁移项目 MDC 规则；存在 `.cursor/mcp.json` 时生成 `.codex/config.toml` managed block
 
 **不会删除**业务规格 `openspec/specs/**`，也**不会覆盖** `config.project.yaml`。  
 破坏性细节见 [BREAKING.md](BREAKING.md)。
@@ -144,7 +151,7 @@ rules 按 artifact 键拼接（workflow 在前、project 在后、去重保序�
 
 ## 健康检查
 
-Doctor 校验：manifest 所列文件、router、schema 文件、**`openspec schema which workflow-spec` 解析到项目本地**、工作流 skill 命名空间不得残留，以及 **`openspec/specs`（与未归档 change 的 `specs/`）下每个 capability 必须 `spec.md`+`design.md` 成对**。
+Doctor 校验：双客户端 manifest 所列文件、Cursor router、Codex managed block/skill、MCP 转换结果、schema 文件、**`openspec schema which workflow-spec` 解析到项目本地**、旧工作流 skill 命名空间不得残留，以及 **`openspec/specs`（与未归档 change 的 `specs/`）下每个 capability 必须 `spec.md`+`design.md` 成对**。
 
 ---
 

@@ -1,0 +1,4 @@
+interface:
+  display_name: "OpenSpec Workflow"
+  short_description: "Run the shared OpenSpec lifecycle safely"
+  default_prompt: "Use $openspec-workflow to continue the active OpenSpec change."

@@ -1,6 +1,6 @@
 # Workflow
 
-面向 Cursor 的 OpenSpec 流程工具包：命令入口、自定义 schema、`pack` 短提示，以及 apply 时的三条质量门禁。
+面向 Cursor 与 Codex 的 OpenSpec 流程工具包：双客户端入口、自定义 schema、短提示，以及 apply 时的三条质量门禁。
 
 ## 安装到项目
 
@@ -24,11 +24,15 @@ pwsh -File scripts/doctor.ps1 -ProjectRoot D:\work\your-project
 | `openspec/config.yaml` | 合并产物（CLI 只读；`doctor`/`init` 自动 sync，勿手改） |
 | `.cursor/rules/workflow-router.mdc` | 唯一 alwaysApply 路由 |
 | `.cursor/commands/opsx-*.md` | Cursor 命令 |
+| `AGENTS.md` 的 workflow managed block | Codex 持久路由；保留块外项目内容 |
+| `.agents/skills/openspec-workflow/` | Codex workflow skill 与按需 references |
+| `.agents/rules/` | 从项目自有 Cursor MDC 规则生成的 Codex 副本 |
+| `.codex/config.toml` 的 managed block | 从项目 `.cursor/mcp.json` 生成的 Codex MCP 配置 |
 | `scripts/init.ps1` · `doctor.ps1` | 部署与健康检查 |
 
 ## 命令怎么用
 
-在 Cursor 里输入 `/opsx:…`（或说同等意图，由 router 映射到同一 prompt）。命令会要求 agent **先读** `.cursor/workflow/pack/prompts/` 下对应文件再行动。
+在 Cursor 里输入 `/opsx:…`，或在 Codex 里使用 `$openspec-workflow`、旧命令别名及同等自然语言意图。两端均路由到同一组上游 prompts/gates；Codex references 由 init 从 `.cursor/workflow/pack/` 确定性生成。
 
 ### 推荐次序（一条变更）
 

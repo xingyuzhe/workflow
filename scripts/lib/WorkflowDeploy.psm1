@@ -1,6 +1,10 @@
 # WorkflowDeploy.psm1 — shared init/doctor logic for Workflow v2
 
-$script:WorkflowVersion = '2.0.0'
+$script:WorkflowVersion = '2.1.0'
+$script:WorkflowAgentsStart = '<!-- BEGIN WORKFLOW MANAGED -->'
+$script:WorkflowAgentsEnd = '<!-- END WORKFLOW MANAGED -->'
+$script:WorkflowCodexConfigStart = '# BEGIN WORKFLOW MANAGED MCP'
+$script:WorkflowCodexConfigEnd = '# END WORKFLOW MANAGED MCP'
 
 function Resolve-WorkflowPath {
   param([Parameter(Mandatory)][string]$Path)
@@ -121,6 +125,27 @@ function Get-WorkflowManifestFiles {
     '.cursor/commands/opsx-sync.md',
     '.cursor/commands/opsx-archive.md',
     '.cursor/commands/opsx-doctor.md',
+    'AGENTS.md',
+    '.agents/skills/openspec-workflow/SKILL.md',
+    '.agents/skills/openspec-workflow/agents/openai.yaml',
+    '.agents/skills/openspec-workflow/references/prompts/apply.md',
+    '.agents/skills/openspec-workflow/references/prompts/explore.md',
+    '.agents/skills/openspec-workflow/references/prompts/new.md',
+    '.agents/skills/openspec-workflow/references/prompts/continue.md',
+    '.agents/skills/openspec-workflow/references/prompts/ff.md',
+    '.agents/skills/openspec-workflow/references/prompts/verify.md',
+    '.agents/skills/openspec-workflow/references/prompts/sync.md',
+    '.agents/skills/openspec-workflow/references/prompts/archive.md',
+    '.agents/skills/openspec-workflow/references/prompts/grill.md',
+    '.agents/skills/openspec-workflow/references/prompts/branch.md',
+    '.agents/skills/openspec-workflow/references/prompts/finish.md',
+    '.agents/skills/openspec-workflow/references/prompts/doctor.md',
+    '.agents/skills/openspec-workflow/references/gates/tdd.md',
+    '.agents/skills/openspec-workflow/references/gates/verify.md',
+    '.agents/skills/openspec-workflow/references/gates/debug.md',
+    '.agents/rules/.workflow-managed.json',
+    '.agents/workflow/version.json',
+    '.agents/workflow/manifest.json',
     'openspec/schemas/workflow-spec/schema.yaml',
     'openspec/config.workflow.yaml',
     'openspec/config.project.yaml',
@@ -146,6 +171,198 @@ function Write-WorkflowUtf8Text {
   }
   # UTF-8 with BOM helps Windows PowerShell 5.1 round-trip Chinese safely
   [System.IO.File]::WriteAllText($Path, $Text, [System.Text.UTF8Encoding]::new($true))
+}
+
+function Get-WorkflowCursorProjectRules {
+  param([Parameter(Mandatory)][string]$ProjectRoot)
+  $rulesRoot = Join-Path $ProjectRoot '.cursor/rules'
+  if (-not (Test-Path -LiteralPath $rulesRoot)) { return @() }
+  return @(Get-ChildItem -LiteralPath $rulesRoot -File -Filter '*.mdc' -ErrorAction SilentlyContinue |
+    Where-Object { $_.Name -ne 'workflow-router.mdc' })
+}
+
+function Get-WorkflowMdcMetadata {
+  param([Parameter(Mandatory)][string]$Path)
+  $text = Read-WorkflowUtf8Text -Path $Path
+  $description = ''
+  $globs = ''
+  $alwaysApply = $false
+  if ($text -match '(?ms)^---\s*\r?\n(.*?)\r?\n---') {
+    $front = $Matches[1]
+    if ($front -match '(?m)^description:\s*(.+)$') { $description = $Matches[1].Trim() }
+    if ($front -match '(?m)^globs:\s*(.*)$') { $globs = $Matches[1].Trim() }
+    if ($front -match '(?m)^alwaysApply:\s*true\s*$') { $alwaysApply = $true }
+  }
+  return [pscustomobject]@{ Description = $description; Globs = $globs; AlwaysApply = $alwaysApply }
+}
+
+function Install-WorkflowCodexRules {
+  param([Parameter(Mandatory)][string]$ProjectRoot)
+  $dstRoot = Join-Path $ProjectRoot '.agents/rules'
+  New-Item -ItemType Directory -Force -Path $dstRoot | Out-Null
+  $indexPath = Join-Path $dstRoot '.workflow-managed.json'
+  if (Test-Path -LiteralPath $indexPath) {
+    try {
+      $old = Get-Content -Raw -Encoding utf8 -LiteralPath $indexPath | ConvertFrom-Json
+      foreach ($name in @($old.files)) {
+        $oldPath = Join-Path $dstRoot $name
+        if (Test-Path -LiteralPath $oldPath -PathType Leaf) { Remove-Item -LiteralPath $oldPath -Force }
+      }
+    } catch { }
+  }
+
+  $entries = New-Object System.Collections.Generic.List[object]
+  foreach ($rule in (Get-WorkflowCursorProjectRules -ProjectRoot $ProjectRoot)) {
+    $name = ([IO.Path]::GetFileNameWithoutExtension($rule.Name) + '.md')
+    Copy-Item -LiteralPath $rule.FullName -Destination (Join-Path $dstRoot $name) -Force
+    $meta = Get-WorkflowMdcMetadata -Path $rule.FullName
+    [void]$entries.Add([pscustomobject]@{
+      Name = $name
+      Description = $meta.Description
+      Globs = $meta.Globs
+      AlwaysApply = $meta.AlwaysApply
+    })
+  }
+  @{ files = @($entries | ForEach-Object { $_.Name }) } | ConvertTo-Json | Set-Content -Encoding utf8 -LiteralPath $indexPath
+  return $entries.ToArray()
+}
+
+function Convert-WorkflowPromptForCodex {
+  param([Parameter(Mandatory)][string]$Text)
+  $out = $Text.Replace('.cursor/workflow/pack/gates/', '../gates/')
+  $out = $out.Replace('.cursor/workflow/state.json', '.agents/workflow/state.json')
+  $out = $out.Replace('`state.json` exists under `.cursor/workflow/`', '`.agents/workflow/state.json` exists')
+  return $out
+}
+
+function Install-WorkflowCodexSkill {
+  param(
+    [Parameter(Mandatory)][string]$SourceRoot,
+    [Parameter(Mandatory)][string]$TargetRoot
+  )
+  $srcSkill = Join-Path $SourceRoot '.agents/skills/openspec-workflow'
+  $dstSkill = Join-Path $TargetRoot '.agents/skills/openspec-workflow'
+  foreach ($rel in @('SKILL.md', 'agents/openai.yaml')) {
+    $src = Join-Path $srcSkill $rel
+    if (-not (Test-Path -LiteralPath $src)) { throw "Source missing: $src" }
+    $dst = Join-Path $dstSkill $rel
+    New-Item -ItemType Directory -Force -Path (Split-Path -Parent $dst) | Out-Null
+    if ((Resolve-Path -LiteralPath $src).Path -ne [IO.Path]::GetFullPath($dst)) {
+      Copy-Item -LiteralPath $src -Destination $dst -Force
+    }
+  }
+
+  $refs = Join-Path $dstSkill 'references'
+  if (Test-Path -LiteralPath $refs) { Remove-Item -LiteralPath $refs -Recurse -Force }
+  foreach ($kind in @('prompts', 'gates')) {
+    $srcDir = Join-Path $SourceRoot ".cursor/workflow/pack/$kind"
+    $dstDir = Join-Path $refs $kind
+    New-Item -ItemType Directory -Force -Path $dstDir | Out-Null
+    Get-ChildItem -LiteralPath $srcDir -File -Filter '*.md' | ForEach-Object {
+      $text = Read-WorkflowUtf8Text -Path $_.FullName
+      if ($kind -eq 'prompts') { $text = Convert-WorkflowPromptForCodex -Text $text }
+      Write-WorkflowUtf8Text -Path (Join-Path $dstDir $_.Name) -Text $text
+    }
+  }
+}
+
+function Get-WorkflowAgentsBlock {
+  param([object[]]$RuleEntries = @())
+  $lines = New-Object System.Collections.Generic.List[string]
+  [void]$lines.Add($script:WorkflowAgentsStart)
+  [void]$lines.Add('## OpenSpec workflow')
+  [void]$lines.Add('')
+  [void]$lines.Add('Use `$openspec-workflow` for OpenSpec lifecycle work. Treat `/opsx:name`, `/opsx-name`, `$openspec-workflow name`, and a clear natural-language lifecycle request as equivalent.')
+  [void]$lines.Add('')
+  [void]$lines.Add('Route operations as follows: `explore`, `new`, `ff`, `continue`, `grill`, `apply`, `verify`, `sync`, `archive`, and `doctor`. Bugs, test failures, and unexpected behavior use the skill debug gate.')
+  [void]$lines.Add('')
+  [void]$lines.Add('- Treat `openspec/config.yaml` as generated from `openspec/config.workflow.yaml` and `openspec/config.project.yaml`; do not hand-edit it.')
+  [void]$lines.Add('- Reconcile `.agents/workflow/state.json` with `openspec status`; CLI output wins and missing local state never blocks work.')
+  [void]$lines.Add('- Preserve unrelated user changes. Do not merge, push, open a PR, discard a branch, or archive without the authorization required by the workflow.')
+  if (@($RuleEntries).Count -gt 0) {
+    [void]$lines.Add('')
+    [void]$lines.Add('### Migrated project rules')
+    [void]$lines.Add('')
+    foreach ($entry in $RuleEntries) {
+      $desc = if ($entry.Description) { ' - ' + $entry.Description } else { '' }
+      if ($entry.AlwaysApply) {
+        [void]$lines.Add('- Read `.agents/rules/' + $entry.Name + '` before any work (always apply)' + $desc + '.')
+      } elseif ($entry.Globs) {
+        [void]$lines.Add('- Read `.agents/rules/' + $entry.Name + '` before changing files matching `' + $entry.Globs + '`' + $desc + '.')
+      } else {
+        [void]$lines.Add('- Read `.agents/rules/' + $entry.Name + '` when its subject is relevant' + $desc + '.')
+      }
+    }
+  }
+  [void]$lines.Add($script:WorkflowAgentsEnd)
+  return ($lines -join "`n")
+}
+
+function Install-WorkflowAgentsGuidance {
+  param(
+    [Parameter(Mandatory)][string]$ProjectRoot,
+    [object[]]$RuleEntries = @()
+  )
+  $path = Join-Path $ProjectRoot 'AGENTS.md'
+  $existing = if (Test-Path -LiteralPath $path) { Read-WorkflowUtf8Text -Path $path } else { '' }
+  $block = Get-WorkflowAgentsBlock -RuleEntries $RuleEntries
+  $pattern = '(?ms)' + [regex]::Escape($script:WorkflowAgentsStart) + '.*?' + [regex]::Escape($script:WorkflowAgentsEnd)
+  if ($existing -match $pattern) {
+    $updated = [regex]::Replace($existing, $pattern, [System.Text.RegularExpressions.MatchEvaluator]{ param($match) $block }, 1)
+  } elseif ($existing.Trim()) {
+    $updated = $existing.TrimEnd() + "`n`n" + $block + "`n"
+  } else {
+    $updated = "# Repository guidance`n`n" + $block + "`n"
+  }
+  Write-WorkflowUtf8Text -Path $path -Text $updated
+}
+
+function ConvertTo-WorkflowTomlString {
+  param([AllowNull()][string]$Value)
+  if ($null -eq $Value) { return '""' }
+  return '"' + $Value.Replace('\', '\\').Replace('"', '\"').Replace("`r", '\r').Replace("`n", '\n') + '"'
+}
+
+function Install-WorkflowCodexMcpConfig {
+  param([Parameter(Mandatory)][string]$ProjectRoot)
+  $cursorPath = Join-Path $ProjectRoot '.cursor/mcp.json'
+  if (-not (Test-Path -LiteralPath $cursorPath)) { return }
+  $json = Get-Content -Raw -Encoding utf8 -LiteralPath $cursorPath | ConvertFrom-Json
+  if (-not $json.mcpServers) { return }
+  $lines = New-Object System.Collections.Generic.List[string]
+  [void]$lines.Add($script:WorkflowCodexConfigStart)
+  [void]$lines.Add('# Generated from .cursor/mcp.json by Workflow. Edit the Cursor source or project-owned TOML outside this block.')
+  foreach ($prop in $json.mcpServers.psobject.Properties) {
+    $name = $prop.Name
+    $server = $prop.Value
+    [void]$lines.Add('')
+    [void]$lines.Add("[mcp_servers.$name]")
+    if ($server.command) { [void]$lines.Add('command = ' + (ConvertTo-WorkflowTomlString "$($server.command)")) }
+    if ($server.args) {
+      $args = @($server.args | ForEach-Object { ConvertTo-WorkflowTomlString "$_" }) -join ', '
+      [void]$lines.Add("args = [$args]")
+    }
+    if ($server.env) {
+      [void]$lines.Add('')
+      [void]$lines.Add("[mcp_servers.$name.env]")
+      foreach ($envProp in $server.env.psobject.Properties) {
+        [void]$lines.Add("$($envProp.Name) = " + (ConvertTo-WorkflowTomlString "$($envProp.Value)"))
+      }
+    }
+  }
+  [void]$lines.Add($script:WorkflowCodexConfigEnd)
+  $block = $lines -join "`n"
+  $path = Join-Path $ProjectRoot '.codex/config.toml'
+  $existing = if (Test-Path -LiteralPath $path) { Read-WorkflowUtf8Text -Path $path } else { '' }
+  $pattern = '(?ms)' + [regex]::Escape($script:WorkflowCodexConfigStart) + '.*?' + [regex]::Escape($script:WorkflowCodexConfigEnd)
+  if ($existing -match $pattern) {
+    $updated = [regex]::Replace($existing, $pattern, [System.Text.RegularExpressions.MatchEvaluator]{ param($match) $block }, 1)
+  } elseif ($existing.Trim()) {
+    $updated = $existing.TrimEnd() + "`n`n" + $block + "`n"
+  } else {
+    $updated = $block + "`n"
+  }
+  Write-WorkflowUtf8Text -Path $path -Text $updated
 }
 
 function ConvertFrom-WorkflowOpenSpecConfigText {
@@ -358,19 +575,22 @@ function Sync-WorkflowOpenSpecConfig {
 
 function Write-WorkflowMetadata {
   param([Parameter(Mandatory)][string]$ProjectRoot)
-  $wf = Join-Path $ProjectRoot '.cursor/workflow'
-  New-Item -ItemType Directory -Force -Path $wf | Out-Null
-  $versionPath = Join-Path $wf 'version.json'
-  $manifestPath = Join-Path $wf 'manifest.json'
-  @{
-    version = $script:WorkflowVersion
-    schema  = 'workflow-spec'
-    engine  = 'powershell'
-  } | ConvertTo-Json | Set-Content -Encoding utf8 $versionPath
-  @{
-    version = $script:WorkflowVersion
-    files   = Get-WorkflowManifestFiles
-  } | ConvertTo-Json | Set-Content -Encoding utf8 $manifestPath
+  foreach ($relativeRoot in @('.cursor/workflow', '.agents/workflow')) {
+    $wf = Join-Path $ProjectRoot $relativeRoot
+    New-Item -ItemType Directory -Force -Path $wf | Out-Null
+    $versionPath = Join-Path $wf 'version.json'
+    $manifestPath = Join-Path $wf 'manifest.json'
+    @{
+      version = $script:WorkflowVersion
+      schema  = 'workflow-spec'
+      engine  = 'powershell'
+      clients = @('cursor', 'codex')
+    } | ConvertTo-Json | Set-Content -Encoding utf8 $versionPath
+    @{
+      version = $script:WorkflowVersion
+      files   = Get-WorkflowManifestFiles
+    } | ConvertTo-Json | Set-Content -Encoding utf8 $manifestPath
+  }
 }
 
 function Install-WorkflowV2 {
@@ -452,6 +672,10 @@ function Install-WorkflowV2 {
   }
 
   Install-WorkflowOpenSpecConfigs -SourceRoot $SourceRoot -TargetRoot $TargetRoot
+  Install-WorkflowCodexSkill -SourceRoot $SourceRoot -TargetRoot $TargetRoot
+  $codexRules = @(Install-WorkflowCodexRules -ProjectRoot $TargetRoot)
+  Install-WorkflowAgentsGuidance -ProjectRoot $TargetRoot -RuleEntries $codexRules
+  Install-WorkflowCodexMcpConfig -ProjectRoot $TargetRoot
   Write-WorkflowMetadata -ProjectRoot $TargetRoot
 }
 
@@ -512,7 +736,7 @@ function Invoke-WorkflowDoctor {
 
   foreach ($rel in (Get-WorkflowManifestFiles)) {
     # version/manifest written together; still check core files
-    if ($rel -in @('.cursor/workflow/version.json', '.cursor/workflow/manifest.json')) { continue }
+    if ($rel -in @('.cursor/workflow/version.json', '.cursor/workflow/manifest.json', '.agents/workflow/version.json', '.agents/workflow/manifest.json')) { continue }
     $p = Join-Path $ProjectRoot $rel
     if (-not (Test-Path $p)) {
       $errors.Add("missing: $rel")
@@ -534,6 +758,26 @@ function Invoke-WorkflowDoctor {
       }
     } catch {
       $errors.Add("invalid manifest.json: $($_.Exception.Message)")
+    }
+  }
+
+  foreach ($rel in @('.agents/workflow/version.json', '.agents/workflow/manifest.json')) {
+    if (-not (Test-Path -LiteralPath (Join-Path $ProjectRoot $rel))) { $errors.Add("missing: $rel") }
+  }
+  $agentsPath = Join-Path $ProjectRoot 'AGENTS.md'
+  if (Test-Path -LiteralPath $agentsPath) {
+    $agentsRaw = Get-Content -Raw -Encoding utf8 -LiteralPath $agentsPath
+    if ($agentsRaw -notmatch [regex]::Escape($script:WorkflowAgentsStart)) {
+      $errors.Add('AGENTS.md missing workflow managed block')
+    }
+  }
+  $cursorMcp = Join-Path $ProjectRoot '.cursor/mcp.json'
+  if (Test-Path -LiteralPath $cursorMcp) {
+    $codexConfig = Join-Path $ProjectRoot '.codex/config.toml'
+    if (-not (Test-Path -LiteralPath $codexConfig)) {
+      $errors.Add('missing: .codex/config.toml')
+    } elseif ((Get-Content -Raw -Encoding utf8 -LiteralPath $codexConfig) -notmatch [regex]::Escape($script:WorkflowCodexConfigStart)) {
+      $errors.Add('.codex/config.toml missing workflow managed MCP block')
     }
   }
 
@@ -616,7 +860,7 @@ function Write-WorkflowState {
     [string]$Phase = '',
     [string]$Branch = ''
   )
-  $wf = Join-Path $ProjectRoot '.cursor/workflow'
+  $wf = Join-Path $ProjectRoot '.agents/workflow'
   New-Item -ItemType Directory -Force -Path $wf | Out-Null
   $path = Join-Path $wf 'state.json'
   $existing = @{}
@@ -629,7 +873,11 @@ function Write-WorkflowState {
     branch        = if ($Branch) { $Branch } elseif ($existing.branch) { $existing.branch } else { $null }
     updated_at    = (Get-Date).ToUniversalTime().ToString('o')
   }
-  ($obj | ConvertTo-Json) | Set-Content -Encoding utf8 $path
+  $json = ($obj | ConvertTo-Json)
+  $json | Set-Content -Encoding utf8 $path
+  $cursorWf = Join-Path $ProjectRoot '.cursor/workflow'
+  New-Item -ItemType Directory -Force -Path $cursorWf | Out-Null
+  $json | Set-Content -Encoding utf8 (Join-Path $cursorWf 'state.json')
   return $path
 }
 
@@ -640,6 +888,10 @@ Export-ModuleMember -Function @(
   'Remove-WorkflowOwnedEntries',
   'Copy-WorkflowTree',
   'Get-WorkflowManifestFiles',
+  'Install-WorkflowCodexSkill',
+  'Install-WorkflowCodexRules',
+  'Install-WorkflowAgentsGuidance',
+  'Install-WorkflowCodexMcpConfig',
   'Write-WorkflowMetadata',
   'Merge-WorkflowOpenSpecConfig',
   'Install-WorkflowOpenSpecConfigs',

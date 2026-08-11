@@ -6,3 +6,4 @@
 
 # Workflow v2 local phase state
 .cursor/workflow/state.json
+.agents/workflow/state.json

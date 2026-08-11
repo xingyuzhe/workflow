@@ -49,6 +49,38 @@ try {
   $proj = Join-Path $tmp 'proj'
   New-Item -ItemType Directory -Force -Path (Join-Path $proj '.cursor\skills\openspec-v1.5.0') | Out-Null
   Set-Content (Join-Path $proj '.cursor\skills\openspec-v1.5.0\SKILL.md') 'legacy'
+  New-Item -ItemType Directory -Force -Path (Join-Path $proj '.cursor\rules') | Out-Null
+  @(
+    '---',
+    'description: Early project rule',
+    'alwaysApply: true',
+    '---',
+    '',
+    '# Early project rule',
+    '',
+    'Keep this project rule.'
+  ) | Set-Content -Encoding utf8 (Join-Path $proj '.cursor\rules\early-project.mdc')
+  @(
+    '---',
+    'description: Prisma project rule',
+    'globs: apps/api/prisma/**/*,docs/data/**/*',
+    'alwaysApply: false',
+    '---',
+    '',
+    '# Prisma project rule'
+  ) | Set-Content -Encoding utf8 (Join-Path $proj '.cursor\rules\data-model.mdc')
+  @(
+    '{',
+    '  "mcpServers": {',
+    '    "example-mcp": {',
+    '      "command": "npx",',
+    '      "args": ["-y", "example-mcp"],',
+    '      "env": { "EXAMPLE_MODE": "test" }',
+    '    }',
+    '  }',
+    '}'
+  ) | Set-Content -Encoding utf8 (Join-Path $proj '.cursor\mcp.json')
+  Set-Content -Encoding utf8 (Join-Path $proj 'AGENTS.md') "# Project guidance`n`nKeep this custom guidance.`n"
   New-Item -ItemType Directory -Force -Path (Join-Path $proj 'openspec\specs\keep-me') | Out-Null
   Set-Content (Join-Path $proj 'openspec\specs\keep-me\spec.md') 'business spec stays'
 
@@ -60,6 +92,24 @@ try {
   Assert-True (-not (Test-Path (Join-Path $proj '.cursor\skills\openspec-v1.5.0'))) "install purges legacy skills"
   Assert-True (Test-Path (Join-Path $proj 'openspec\specs\keep-me\spec.md')) "preserves business specs"
   Assert-True (Test-Path (Join-Path $proj '.cursor\workflow\pack\prompts\apply.md')) "installs apply prompt"
+  Assert-True (Test-Path (Join-Path $proj '.agents\skills\openspec-workflow\SKILL.md')) "installs Codex workflow skill"
+  Assert-True (Test-Path (Join-Path $proj '.agents\skills\openspec-workflow\references\prompts\apply.md')) "installs Codex apply prompt"
+  Assert-True (Test-Path (Join-Path $proj '.agents\skills\openspec-workflow\references\gates\tdd.md')) "installs Codex TDD gate"
+  Assert-True (Test-Path (Join-Path $proj '.agents\rules\early-project.md')) "migrates project Cursor rule for Codex"
+  $agents1 = Get-Content -Raw -Encoding utf8 (Join-Path $proj 'AGENTS.md')
+  Assert-True ($agents1 -match 'Keep this custom guidance') "preserves project-owned AGENTS guidance"
+  Assert-True ($agents1 -match 'BEGIN WORKFLOW MANAGED') "adds managed workflow guidance to AGENTS.md"
+  Assert-True ($agents1 -match 'Read `\.agents/rules/early-project\.md` before any work \(always apply\)') "routes always-apply project rule"
+  Assert-True ($agents1 -match 'Read `\.agents/rules/data-model\.md` before changing files matching `apps/api/prisma/\*\*/\*,docs/data/\*\*/\*`') "routes glob-scoped project rule"
+  Assert-True ($agents1 -notmatch '\$\(') "renders project rule metadata without PowerShell expressions"
+  $codexConfig1 = Get-Content -Raw -Encoding utf8 (Join-Path $proj '.codex\config.toml')
+  Assert-True ($codexConfig1 -match '\[mcp_servers\.example-mcp\]') "converts Cursor MCP server to Codex config"
+  Assert-True ($codexConfig1 -match 'EXAMPLE_MODE\s*=\s*"test"') "converts Cursor MCP environment"
+
+  Install-WorkflowV2 -SourceRoot $repoRoot -TargetRoot $proj
+  $agents2 = Get-Content -Raw -Encoding utf8 (Join-Path $proj 'AGENTS.md')
+  Assert-True (($agents2 -split 'BEGIN WORKFLOW MANAGED').Count -eq 2) "reinstall keeps one managed AGENTS block"
+  Assert-True ($agents2 -match 'Keep this custom guidance') "reinstall still preserves project AGENTS guidance"
 
   # business capability must be paired for doctor; preserve both files across install
   Set-Content (Join-Path $proj 'openspec\specs\keep-me\design.md') 'business design stays'
@@ -200,6 +250,7 @@ try {
   Install-WorkflowV2 -SourceRoot $repoRoot -TargetRoot $repoRoot
   Assert-True (Test-Path (Join-Path $repoRoot '.cursor\workflow\pack\prompts\apply.md')) "self-init preserves pack"
   Assert-True (Test-Path (Join-Path $repoRoot '.cursor\commands\opsx-apply.md')) "self-init preserves opsx-apply"
+  Assert-True (Test-Path (Join-Path $repoRoot '.agents\skills\openspec-workflow\SKILL.md')) "self-init preserves Codex workflow skill"
 
 } finally {
   Remove-Item -Recurse -Force $tmp -ErrorAction SilentlyContinue
