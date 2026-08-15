@@ -78,4 +78,3 @@ Doctor SHALL validate the project-local workflow schema and spec/design pairs. W
 #### Scenario: CLI unavailable
 - **WHEN** the OpenSpec executable is not discoverable
 - **THEN** Doctor SHALL still validate local schema files without assuming an NVM version path
-
