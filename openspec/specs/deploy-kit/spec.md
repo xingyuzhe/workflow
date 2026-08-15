@@ -3,9 +3,7 @@
 ## Purpose
 
 Deploy and validate the platform-neutral Workflow runtime for Cursor and Codex.
-
 ## Requirements
-
 ### Requirement: Generate client adapters from neutral source
 Build SHALL generate client artifacts from the workflow-owned `.workflow` source. The workflow repository SHALL retain both the editable neutral source and generated artifacts so it exercises the same Codex artifact that it publishes. Client adapter files SHALL NOT be used as source input.
 
@@ -53,11 +51,19 @@ Publish SHALL overwrite `config.workflow.yaml`, preserve `config.project.yaml`, 
 - **THEN** default Doctor SHALL report drift without modifying `config.yaml`
 
 ### Requirement: Read-only Doctor and explicit repair
-Artifact Doctor SHALL be read-only and SHALL compare the complete published skill against the source artifact, validate artifact metadata, require downstream neutral source to be absent, and check local OpenSpec schema and spec/design pairs.
+Artifact Doctor SHALL be read-only and SHALL compare the complete published skill against the source artifact, validate artifact metadata, require downstream neutral source to be absent, and check local OpenSpec schema and spec/design pairs. Text artifact hashing and comparison MUST treat LF and CRLF line endings as equivalent while detecting every other content difference.
 
 #### Scenario: Generated file drift
 - **WHEN** an adapter differs from canonical source
 - **THEN** Doctor SHALL fail and leave the file unchanged
+
+#### Scenario: Git converts artifact line endings
+- **WHEN** source and published text artifacts differ only by LF versus CRLF line endings
+- **THEN** Artifact Doctor MUST accept their content as equivalent
+
+#### Scenario: Artifact text actually changes
+- **WHEN** a published artifact differs from the source by content other than line endings
+- **THEN** Artifact Doctor MUST report content drift and leave the file unchanged
 
 ### Requirement: Single metadata authority
 The workflow source SHALL keep source metadata under `.workflow`. The generated Codex artifact SHALL keep published version and manifest inside `.agents/skills/openspec-workflow`. A downstream repository SHALL contain only artifact metadata and SHALL NOT contain `.workflow` metadata or source.
@@ -72,3 +78,4 @@ Doctor SHALL validate the project-local workflow schema and spec/design pairs. W
 #### Scenario: CLI unavailable
 - **WHEN** the OpenSpec executable is not discoverable
 - **THEN** Doctor SHALL still validate local schema files without assuming an NVM version path
+
