@@ -4,6 +4,7 @@
   "artifacts": [
     {
       "id": "proposal",
+      "kind": "document",
       "path": "proposal.md",
       "required": true,
       "requires": [],
@@ -12,7 +13,9 @@
     },
     {
       "id": "specs",
+      "kind": "capability-deltas",
       "path": "specs/",
+      "publishPath": ".workflow/specs",
       "required": false,
       "requires": ["proposal"],
       "template": "templates/spec.md",
@@ -20,6 +23,7 @@
     },
     {
       "id": "design",
+      "kind": "document",
       "path": "design.md",
       "required": true,
       "requires": ["proposal"],
@@ -28,6 +32,7 @@
     },
     {
       "id": "tasks",
+      "kind": "task-list",
       "path": "tasks.md",
       "required": true,
       "requires": ["proposal", "design"],

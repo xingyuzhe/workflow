@@ -1,0 +1,23 @@
+name: Verify workflow
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  windows-powershell:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Test with PowerShell 7
+        shell: pwsh
+        run: ./scripts/tests/WorkflowDeploy.Tests.ps1
+      - name: Check PowerShell 7 generation is deterministic
+        shell: pwsh
+        run: git diff --exit-code
+      - name: Test with Windows PowerShell 5.1
+        shell: powershell
+        run: ./scripts/tests/WorkflowDeploy.Tests.ps1
+      - name: Check Windows PowerShell 5.1 generation is deterministic
+        shell: powershell
+        run: git diff --exit-code

@@ -2,14 +2,23 @@
 
 面向 Cursor 与 Codex 的自包含变更工作流。它定义生命周期规则、每一步的产物、验收条件和授权边界；不依赖外部生命周期 CLI 或 npm 包，也不规定 agent 的通用实现方法。
 
-## 安装到项目
+## 部署到 Codex 项目（推荐）
 
 ```powershell
-pwsh -File scripts/init.ps1 -Target D:\work\your-project -Yes
+pwsh -File scripts/deploy.ps1 -Target D:\work\your-project -Yes
+pwsh -File scripts/check-deployment.ps1 -Target D:\work\your-project
+```
+
+`deploy` 只发布 Codex 运行时 `.agents/skills/workflow`，并安装项目使用的 JSON 配置与 schema。它不会把源码专用的 `pack`、`cli` 或部署脚本复制到下游。
+
+只有需要同时安装 Cursor 与 Codex、并保留完整源码布局时，才使用完整安装：
+
+```powershell
+pwsh -File scripts/init.ps1 -Target D:\work\your-project -Clients cursor,codex -Yes
 pwsh -File scripts/doctor.ps1 -ProjectRoot D:\work\your-project
 ```
 
-`init` 会更新 workflow-owned 入口和 `.workflow/config.workflow.yaml`，保留 `.workflow/config.project.yaml` 与项目自有内容。破坏性边界见 [docs/BREAKING.md](docs/BREAKING.md)。
+两种模式都会更新 workflow-owned 内容，保留 `.workflow/config.project.json` 与项目自有内容。破坏性边界见 [docs/BREAKING.md](docs/BREAKING.md)。
 
 ## 目录
 
@@ -19,9 +28,9 @@ pwsh -File scripts/doctor.ps1 -ProjectRoot D:\work\your-project
 | `.workflow/cli/` | 仓库自带 CLI 源码（源码仓库） |
 | `.workflow/schemas/workflow-contract/` | 本地 artifact contract 与模板 |
 | `.workflow/changes/` · `.workflow/specs/` | change 与主规格数据 |
-| `.workflow/config.workflow.yaml` | 工作流默认配置，部署时可更新 |
-| `.workflow/config.project.yaml` | 项目私有配置，部署不覆盖 |
-| `.workflow/config.yaml` | 前两者的生成结果，勿手改 |
+| `.workflow/config.workflow.json` | 工作流默认配置，部署时可更新 |
+| `.workflow/config.project.json` | 项目私有配置，部署不覆盖 |
+| `.workflow/config.json` | 前两者的生成结果，勿手改 |
 | `.agents/skills/workflow/` | Codex 唯一发布运行时，内含 CLI、references 和元数据 |
 | `.cursor/commands/workflow-*.md` | Cursor 生命周期入口 |
 | `AGENTS.md` managed block | Codex 持久路由；保留块外内容 |
@@ -58,6 +67,7 @@ explore（可选） → new 或 ff → continue → grill（可选）
 
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -File scripts/tests/WorkflowDeploy.Tests.ps1
+pwsh -NoProfile -File scripts/tests/WorkflowDeploy.Tests.ps1
 ```
 
 - [架构](docs/architecture.md)

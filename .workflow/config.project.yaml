@@ -1,3 +1,0 @@
-# Project-private workflow config. Installation never overwrites this file.
-# Edit this file; init or an explicit repair merges it into config.yaml. Doctor is read-only.
-rules: {}

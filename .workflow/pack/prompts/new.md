@@ -6,11 +6,11 @@
 
 ## Inputs
 
-- User intent, repository rules, current main specs, and the `workflow-contract` artifact contract.
+- User intent, repository rules, current main specs, and the schema selected by `.workflow/config.json`.
 
 ## Outputs
 
-- A new change using `workflow-contract`.
+- A new change using the selected repository-local schema.
 - The initial artifact scope requested by the user, produced in schema dependency order.
 
 ## Acceptance

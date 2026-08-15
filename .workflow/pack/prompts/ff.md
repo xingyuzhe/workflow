@@ -6,7 +6,7 @@
 
 ## Inputs
 
-- User intent, repository rules, current main specs, and the `workflow-contract` artifact contract.
+- User intent, repository rules, current main specs, and the schema selected by `.workflow/config.json`.
 
 ## Outputs
 

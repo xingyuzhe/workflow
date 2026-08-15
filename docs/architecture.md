@@ -1,6 +1,6 @@
 # Workflow 架构
 
-当前版本：`5.0.0`。Workflow 是完全自定义、自包含的生命周期系统，只规定规则、产物、验收和授权边界。
+当前版本：`6.0.0`。Workflow 是完全自定义、自包含的生命周期系统，只规定规则、产物、验收和授权边界。
 
 ## 两层结构
 
@@ -21,7 +21,7 @@
 
 - `.workflow/changes/` 与 `.workflow/specs/` 是生命周期数据权威。
 - `.workflow/schemas/workflow-contract/schema.json` 定义 artifact 图、依赖、路径和模板。
-- `.workflow/config.yaml` 由 workflow 默认配置和项目配置合并生成。
+- `.workflow/config.json` 由 workflow 默认配置和项目配置合并生成。
 - 本地 CLI 直接读取这些文件；没有外部命令、注册表或缓存拥有更高优先级。
 - capability 的 `spec.md` 与 `design.md` 必须成对。
 
@@ -33,7 +33,12 @@ Cursor 获得 `/workflow:*` 命令与 router；Codex 获得 `$workflow` skill、
 
 ## 构建、发布与 Doctor
 
-`scripts/build.ps1` 从真相源重建 `.agents/skills/workflow`。发布复制该 skill，并安装项目使用的 `.workflow` 配置与 schema；源码专用的 `.workflow/pack`、`.workflow/cli`、默认规则和 MCP 输入不发布。项目已有 changes、specs、私有配置、项目规则、项目 MCP 配置和其他 skills 均须保留。
+`scripts/build.ps1` 从真相源重建 `.agents/skills/workflow`。
+
+- `scripts/deploy.ps1` 是标准 Codex 下游发布：复制构建后的 skill，并安装项目使用的 `.workflow` 配置与 schema。源码专用的 `.workflow/pack`、`.workflow/cli`、默认规则、MCP 输入和部署脚本不发布。
+- `scripts/init.ps1` 是完整 Cursor+Codex 安装：复制源码布局、部署脚本和两个客户端适配器，适合工作流源码仓库或确实需要 Cursor 的项目。
+
+两种模式都必须保留项目已有 changes、specs、私有配置、项目规则、项目 MCP 配置和其他 skills。
 
 源码 Doctor 检查源与生成物一致性。发布态 CLI 的 `doctor` 检查本地 schema、spec/design 配对、旧命名空间与本地 CLI 完整性。两者都不通过下载依赖来“修复”环境。
 
@@ -41,6 +46,6 @@ Cursor 获得 `/workflow:*` 命令与 router；Codex 获得 `$workflow` skill、
 
 | 文件 | 归属 | 更新方式 |
 |---|---|---|
-| `.workflow/config.workflow.yaml` | Workflow | 安装可更新 |
-| `.workflow/config.project.yaml` | 项目 | 安装不覆盖 |
-| `.workflow/config.yaml` | 生成物 | 安装、显式 sync 或 repair |
+| `.workflow/config.workflow.json` | Workflow | 安装可更新 |
+| `.workflow/config.project.json` | 项目 | 安装不覆盖 |
+| `.workflow/config.json` | 生成物 | 安装或显式配置同步 |

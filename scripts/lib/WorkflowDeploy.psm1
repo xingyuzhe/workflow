@@ -1,6 +1,6 @@
 # WorkflowDeploy.psm1 — platform-neutral workflow deployment
 
-$script:WorkflowVersion = '5.0.0'
+$script:WorkflowVersion = '6.0.0'
 $script:WorkflowAgentsStart = '<!-- BEGIN WORKFLOW MANAGED -->'
 $script:WorkflowAgentsEnd = '<!-- END WORKFLOW MANAGED -->'
 $script:WorkflowCodexConfigStart = '# BEGIN WORKFLOW MANAGED MCP'
@@ -58,7 +58,7 @@ function Get-WorkflowNamespaceSkillDirs {
       $_.Name -like 'superpowers*' -or
       $_.Name -like 'openspec*' -or
       $_.Name -like 'grilling*' -or
-      $_.Name -like 'workflow*'
+      $_.Name -eq 'workflow'
     }
 }
 
@@ -180,6 +180,13 @@ function Install-WorkflowCodexSkill {
       Copy-Item -LiteralPath $src -Destination $dst -Force
     }
   }
+  if ((Resolve-WorkflowPath $SourceRoot) -ne (Resolve-WorkflowPath $TargetRoot)) {
+    foreach ($rel in @('artifact.json', 'artifact-manifest.json')) {
+      $src = Join-Path $srcSkill $rel
+      if (-not (Test-Path -LiteralPath $src -PathType Leaf)) { throw "Source missing: $src" }
+      Copy-Item -LiteralPath $src -Destination (Join-Path $dstSkill $rel) -Force
+    }
+  }
 
   $refs = Join-Path $dstSkill 'references'
   if (Test-Path -LiteralPath $refs) { Remove-Item -LiteralPath $refs -Recurse -Force }
@@ -216,7 +223,7 @@ function Get-WorkflowAgentsBlock {
   [void]$lines.Add('')
   [void]$lines.Add('Route operations as follows: `explore`, `new`, `ff`, `continue`, `grill`, `apply`, `verify`, `sync`, `archive`, and `doctor`. Failures remain in this workflow only when they occur within an active lifecycle operation.')
   [void]$lines.Add('')
-  [void]$lines.Add('- Treat `.workflow/config.yaml` as generated from `.workflow/config.workflow.yaml` and `.workflow/config.project.yaml`; do not hand-edit it.')
+  [void]$lines.Add('- Treat `.workflow/config.json` as generated from `.workflow/config.workflow.json` and `.workflow/config.project.json`; do not hand-edit it.')
   [void]$lines.Add('- Use `.agents/skills/workflow/bin/workflow.ps1` for lifecycle state and validation. Repository files are authoritative.')
   [void]$lines.Add('- Never install, download, discover, or invoke an external lifecycle CLI or package. A missing local CLI is an invalid workflow installation.')
   [void]$lines.Add('- Preserve unrelated user changes. Do not merge, push, open a PR, discard a branch, or archive without the authorization required by the workflow.')
@@ -266,37 +273,20 @@ function ConvertTo-WorkflowTomlString {
 
 function ConvertFrom-WorkflowConfigText {
   param([Parameter(Mandatory)][string]$Text)
-  $schema = $null
-  $rules = [ordered]@{}
-  $currentKey = $null
-  $inRules = $false
-  foreach ($line in ($Text -split "`r?`n")) {
-    $t = $line.TrimEnd()
-    $trim = $t.Trim()
-    if ($trim -eq '' -or $trim.StartsWith('#')) { continue }
-    if ($trim -match '^schema:\s*(.+)$') {
-      $schema = $Matches[1].Trim().Trim('"').Trim("'")
-      continue
-    }
-    if ($trim -eq 'rules:' -or $trim -match '^rules:\s*\{\s*\}\s*$') {
-      $inRules = $true
-      $currentKey = $null
-      continue
-    }
-    if (-not $inRules) { continue }
-    if ($trim -match '^([A-Za-z0-9_-]+):\s*$') {
-      $currentKey = $Matches[1]
-      if (-not $rules.Contains($currentKey)) {
-        $rules[$currentKey] = New-Object System.Collections.Generic.List[string]
-      }
-      continue
-    }
-    if ($currentKey -and $trim -match '^-\s+(.+)$') {
-      $item = $Matches[1].Trim()
-      if (($item.StartsWith('"') -and $item.EndsWith('"')) -or ($item.StartsWith("'") -and $item.EndsWith("'"))) {
-        $item = $item.Substring(1, $item.Length - 2)
-      }
-      [void]$rules[$currentKey].Add($item)
+  try{$value=$Text|ConvertFrom-Json}catch{throw "invalid workflow configuration JSON: $($_.Exception.Message)"}
+  if($null -eq $value -or $value -is [string] -or $value -is [array]){throw 'workflow configuration must be a JSON object'}
+  Assert-WorkflowJsonProperties $value @('schema','rules') 'workflow configuration'
+  $schema=$null
+  if($null -ne $value.schema){if($value.schema -isnot [string] -or "$($value.schema)" -notmatch '^[A-Za-z0-9._-]+$'){throw 'workflow configuration schema must be a safe non-empty string'};$schema="$($value.schema)"}
+  $rules=[ordered]@{}
+  if($null -ne $value.rules){
+    if($value.rules -is [string] -or $value.rules -is [array]){throw 'workflow configuration rules must be an object'}
+    foreach($property in $value.rules.PSObject.Properties){
+      if($property.Name -notmatch '^[A-Za-z0-9_-]+$'){throw "workflow configuration invalid rule key '$($property.Name)'"}
+      if($property.Value -is [string] -or $property.Value -isnot [array]){throw "workflow configuration rule '$($property.Name)' must be an array"}
+      $list=New-Object System.Collections.Generic.List[string]
+      foreach($item in @($property.Value)){if($item -isnot [string] -or -not $item.Trim()){throw "workflow configuration rule '$($property.Name)' must contain non-empty strings"};[void]$list.Add($item)}
+      $rules[$property.Name]=$list
     }
   }
   return [pscustomobject]@{ Schema = $schema; Rules = $rules }
@@ -309,30 +299,12 @@ function Write-WorkflowConfigFile {
     [Parameter(Mandatory)]$Rules,
     [switch]$Generated
   )
-  $sb = New-Object System.Text.StringBuilder
-  if ($Generated) {
-    [void]$sb.AppendLine('# AUTO-GENERATED - DO NOT EDIT.')
-    [void]$sb.AppendLine('# Edit .workflow/config.workflow.yaml / .workflow/config.project.yaml; installation, explicit sync, or doctor -Fix regenerates this file.')
-    [void]$sb.AppendLine('')
-  }
-  if ($Schema) {
-    [void]$sb.AppendLine("schema: $Schema")
-    [void]$sb.AppendLine('')
-  }
-  [void]$sb.AppendLine('rules:')
-  $keys = @($Rules.Keys)
-  if ($keys.Count -eq 0) {
-    [void]$sb.AppendLine('  {}')
-  }
-  else {
-    foreach ($k in $keys) {
-      [void]$sb.AppendLine("  ${k}:")
-      foreach ($item in @($Rules[$k])) {
-        [void]$sb.AppendLine("    - $item")
-      }
-    }
-  }
-  Write-WorkflowUtf8Text -Path $Path -Text (($sb.ToString().TrimEnd()) + "`n")
+  $ruleObject=[ordered]@{}
+  foreach($key in @($Rules.Keys)){$ruleObject[$key]=@($Rules[$key])}
+  $value=[ordered]@{}
+  if($Schema){$value.schema=$Schema}
+  $value.rules=$ruleObject
+  Write-WorkflowUtf8Text -Path $Path -Text (ConvertTo-WorkflowCanonicalJson $value)
 }
 
 function Merge-WorkflowConfig {
@@ -396,26 +368,18 @@ function Install-WorkflowConfigs {
   $cfgDstDir = Join-Path $TargetRoot '.workflow'
   New-Item -ItemType Directory -Force -Path $cfgDstDir | Out-Null
 
-  $wfSrc = Join-Path $SourceRoot '.workflow/config.workflow.yaml'
-  if (-not (Test-Path -LiteralPath $wfSrc)) { throw "Missing .workflow/config.workflow.yaml in source: $SourceRoot" }
-  $wfDst = Join-Path $cfgDstDir 'config.workflow.yaml'
+  $wfSrc = Join-Path $SourceRoot '.workflow/config.workflow.json'
+  if (-not (Test-Path -LiteralPath $wfSrc)) { throw "Missing .workflow/config.workflow.json in source: $SourceRoot" }
+  $wfDst = Join-Path $cfgDstDir 'config.workflow.json'
   $wfSrcFull = (Resolve-Path -LiteralPath $wfSrc).Path
   $wfDstFull = [System.IO.Path]::GetFullPath($wfDst)
   if ($wfSrcFull -ne $wfDstFull) {
     Copy-Item -LiteralPath $wfSrc -Destination $wfDst -Force
   }
-  $projDst = Join-Path $cfgDstDir 'config.project.yaml'
-  $cfgDst = Join-Path $cfgDstDir 'config.yaml'
-  if (-not (Test-Path -LiteralPath $projDst) -and (Test-Path -LiteralPath $cfgDst)) {
-    Move-Item -LiteralPath $cfgDst -Destination $projDst -Force
-  }
+  $projDst = Join-Path $cfgDstDir 'config.project.json'
+  $cfgDst = Join-Path $cfgDstDir 'config.json'
   if (-not (Test-Path -LiteralPath $projDst)) {
-    $shell = @(
-      '# Project-private workflow config. Installation never overwrites this file.',
-      '# Edit this file; init, explicit sync, or doctor -Fix merges into config.yaml.',
-      'rules: {}'
-    ) -join "`n"
-    Write-WorkflowUtf8Text -Path $projDst -Text ($shell + "`n")
+    Write-WorkflowConfigFile -Path $projDst -Rules ([ordered]@{})
   }
 
   Merge-WorkflowConfig -WorkflowPath $wfDst -ProjectPath $projDst -OutPath $cfgDst
@@ -429,23 +393,18 @@ function Sync-WorkflowConfig {
   }
   $ProjectRoot = (Resolve-Path -LiteralPath $ProjectRoot).Path
   $workflow = Join-Path $ProjectRoot '.workflow'
-  $wf = Join-Path $workflow 'config.workflow.yaml'
-  $proj = Join-Path $workflow 'config.project.yaml'
-  $out = Join-Path $workflow 'config.yaml'
+  $wf = Join-Path $workflow 'config.workflow.json'
+  $proj = Join-Path $workflow 'config.project.json'
+  $out = Join-Path $workflow 'config.json'
 
   if (-not (Test-Path -LiteralPath $wf)) {
     return [pscustomobject]@{ Status = 'MissingWorkflow'; Changed = $false }
   }
   if (-not (Test-Path -LiteralPath $proj)) {
-    $shell = @(
-      '# Project-private workflow config. Installation never overwrites this file.',
-      '# Edit this file; init, explicit sync, or doctor -Fix merges into config.yaml.',
-      'rules: {}'
-    ) -join "`n"
-    Write-WorkflowUtf8Text -Path $proj -Text ($shell + "`n")
+    Write-WorkflowConfigFile -Path $proj -Rules ([ordered]@{})
   }
 
-  $tmp = Join-Path ([IO.Path]::GetTempPath()) ('wf-cfg-sync-' + [guid]::NewGuid().ToString('N') + '.yaml')
+  $tmp = Join-Path ([IO.Path]::GetTempPath()) ('wf-cfg-sync-' + [guid]::NewGuid().ToString('N') + '.json')
   try {
     Merge-WorkflowConfig -WorkflowPath $wf -ProjectPath $proj -OutPath $tmp
     $newText = Read-WorkflowUtf8Text -Path $tmp
@@ -581,7 +540,7 @@ function Remove-WorkflowIndexedFiles {
   try { $index=Read-WorkflowJsonFile $IndexPath } catch { return }
   foreach($rel in @($index.files)) {
     $safe="$rel" -replace '\\','/'
-    if ($safe -match '(^|/)\.\.(/|$)' -or $safe.StartsWith('/')) { throw "unsafe managed path '$safe' in $IndexPath" }
+    if ([IO.Path]::IsPathRooted("$rel") -or $safe -match '(^|/)\.\.(/|$)' -or $safe.StartsWith('/')) { throw "unsafe managed path '$safe' in $IndexPath" }
     $path=Join-Path $Root $safe
     if (Test-Path -LiteralPath $path -PathType Leaf) { Remove-Item -LiteralPath $path -Force }
   }
@@ -628,7 +587,9 @@ function Write-WorkflowMetadata {
   param([Parameter(Mandatory)][string]$ProjectRoot,[string[]]$Clients=@('cursor','codex'))
   $Clients=@(Resolve-WorkflowClients $Clients)
   $wf=Join-Path $ProjectRoot '.workflow'; New-Item -ItemType Directory -Force -Path $wf | Out-Null
-  Write-WorkflowUtf8Text (Join-Path $wf 'version.json') (ConvertTo-WorkflowCanonicalJson ([ordered]@{version=$script:WorkflowVersion;schema='workflow-contract';engine='powershell';clients=$Clients}))
+  $configPath=Join-Path $wf 'config.json';if(-not(Test-Path -LiteralPath $configPath -PathType Leaf)){$configPath=Join-Path $wf 'config.workflow.json'};$config=ConvertFrom-WorkflowConfigText (Read-WorkflowUtf8Text $configPath)
+  if(-not $config.Schema){throw 'workflow metadata requires a selected schema'}
+  Write-WorkflowUtf8Text (Join-Path $wf 'version.json') (ConvertTo-WorkflowCanonicalJson ([ordered]@{version=$script:WorkflowVersion;schema=$config.Schema;engine='powershell';clients=$Clients}))
   $files=@('.workflow/pack','.workflow/mcp.json','.workflow/rules.json')
   if($Clients -contains 'cursor'){$files+=@('.cursor/mcp.json','.cursor/rules/workflow-router.mdc','.cursor/commands')}
   if($Clients -contains 'codex'){$files+=@('.codex/config.toml','AGENTS.md','.agents/skills/workflow/SKILL.md','.agents/skills/workflow/artifact.json','.agents/skills/workflow/artifact-manifest.json')}
@@ -647,57 +608,44 @@ function Install-Workflow {
   if (-not (Test-Path -LiteralPath $SourceRoot)) {
     throw "Source root not found: $SourceRoot"
   }
-  if (-not (Test-Path -LiteralPath $TargetRoot)) {
-    New-Item -ItemType Directory -Force -Path $TargetRoot | Out-Null
-  }
   $SourceRoot = (Resolve-Path -LiteralPath $SourceRoot).Path
-  $TargetRoot = (Resolve-Path -LiteralPath $TargetRoot).Path
+  $targetExisted=Test-Path -LiteralPath $TargetRoot
+  if($targetExisted){if(-not(Test-Path -LiteralPath $TargetRoot -PathType Container)){throw "Target root is not a directory: $TargetRoot"};$TargetRoot=(Resolve-Path -LiteralPath $TargetRoot).Path}
   $self = ($SourceRoot -eq $TargetRoot)
-
-  if(-not $self){Move-WorkflowLegacyProjectData $TargetRoot}
-  if($Clients -contains 'cursor'){Remove-WorkflowNamespaceSkills -SkillsRoot (Join-Path $TargetRoot '.cursor/skills')}
-  if (-not $self) {
-    Copy-WorkflowTree -Source (Join-Path $SourceRoot '.workflow/pack') -Destination (Join-Path $TargetRoot '.workflow/pack')
-    Copy-WorkflowTree `
-      -Source (Join-Path $SourceRoot '.workflow/schemas/workflow-contract') `
-      -Destination (Join-Path $TargetRoot '.workflow/schemas/workflow-contract')
-
-    $scriptsDst = Join-Path $TargetRoot 'scripts'
-    New-Item -ItemType Directory -Force -Path $scriptsDst | Out-Null
-    foreach ($name in @('init.ps1', 'doctor.ps1')) {
-      $s = Join-Path $SourceRoot "scripts/$name"
-      if (Test-Path $s) {
-        Copy-Item -LiteralPath $s -Destination (Join-Path $scriptsDst $name) -Force
-      }
+  Test-WorkflowMutationPreflight -SourceRoot $SourceRoot -TargetRoot $TargetRoot -Clients $Clients -FullInstall
+  $targetCreated=$false
+  $snapshot=$null
+  if(-not $self){$snapshotPaths=@('.workflow','openspec','AGENTS.md','scripts/init.ps1','scripts/doctor.ps1','scripts/lib/WorkflowDeploy.psm1');if($Clients -contains 'cursor'){$snapshotPaths+='.cursor'};if($Clients -contains 'codex'){$snapshotPaths+=@('.agents/skills/workflow','.agents/rules','.agents/workflow','.codex/config.toml')};$snapshot=New-WorkflowTargetSnapshot -TargetRoot $TargetRoot -RelativePaths $snapshotPaths}
+  try {
+    if(-not $targetExisted){New-Item -ItemType Directory -Force -Path $TargetRoot -ErrorAction Stop|Out-Null;$targetCreated=$true}
+    if(-not $self){Move-WorkflowLegacyProjectData $TargetRoot}
+    if($Clients -contains 'cursor'){Remove-WorkflowNamespaceSkills -SkillsRoot (Join-Path $TargetRoot '.cursor/skills')}
+    if (-not $self) {
+      Copy-WorkflowTree -Source (Join-Path $SourceRoot '.workflow/pack') -Destination (Join-Path $TargetRoot '.workflow/pack')
+      Copy-WorkflowTree -Source (Join-Path $SourceRoot '.workflow/cli') -Destination (Join-Path $TargetRoot '.workflow/cli')
+      Install-WorkflowSelectedSchema -SourceRoot $SourceRoot -TargetRoot $TargetRoot
+      $scriptsDst = Join-Path $TargetRoot 'scripts';New-Item -ItemType Directory -Force -Path $scriptsDst | Out-Null
+      foreach ($name in @('init.ps1', 'doctor.ps1')) {$s = Join-Path $SourceRoot "scripts/$name";if (Test-Path $s) {Copy-Item -LiteralPath $s -Destination (Join-Path $scriptsDst $name) -Force}}
+      $libSrc = Join-Path $SourceRoot 'scripts/lib/WorkflowDeploy.psm1';if (Test-Path $libSrc) {$libDst = Join-Path $scriptsDst 'lib';New-Item -ItemType Directory -Force -Path $libDst | Out-Null;Copy-Item -LiteralPath $libSrc -Destination (Join-Path $libDst 'WorkflowDeploy.psm1') -Force}
     }
-    $libSrc = Join-Path $SourceRoot 'scripts/lib/WorkflowDeploy.psm1'
-    if (Test-Path $libSrc) {
-      $libDst = Join-Path $scriptsDst 'lib'
-      New-Item -ItemType Directory -Force -Path $libDst | Out-Null
-      Copy-Item -LiteralPath $libSrc -Destination (Join-Path $libDst 'WorkflowDeploy.psm1') -Force
+    foreach($name in @('mcp.json','rules.json')) {$dst=Join-Path $TargetRoot ".workflow/$name";if(-not(Test-Path -LiteralPath $dst)){Copy-Item -LiteralPath (Join-Path $SourceRoot ".workflow/$name") -Destination $dst -Force}}
+    Install-WorkflowConfigs -SourceRoot $SourceRoot -TargetRoot $TargetRoot
+    if($Clients -contains 'codex'){Install-WorkflowCodexSkill -SourceRoot $SourceRoot -TargetRoot $TargetRoot}
+    Install-WorkflowGeneratedAdapters -ProjectRoot $TargetRoot -Clients $Clients
+    $null=Sync-WorkflowConfig -ProjectRoot $TargetRoot
+    Write-WorkflowMetadata -ProjectRoot $TargetRoot -Clients $Clients
+    if($Clients -contains 'cursor'){
+      foreach($legacy in @('.cursor/workflow/version.json','.cursor/workflow/manifest.json')){$p=Join-Path $TargetRoot $legacy;if(Test-Path -LiteralPath $p -PathType Leaf){Remove-Item -LiteralPath $p -Force}}
+      $legacyPack=Join-Path $TargetRoot '.cursor/workflow/pack';if(Test-Path -LiteralPath $legacyPack -PathType Container){Remove-Item -LiteralPath $legacyPack -Recurse -Force}
+      $legacyState=Join-Path $TargetRoot '.cursor/workflow/state.json';if(Test-Path -LiteralPath $legacyState -PathType Leaf){Remove-Item -LiteralPath $legacyState -Force}
     }
-  }
-
-  foreach($name in @('mcp.json','rules.json')) {
-    $dst=Join-Path $TargetRoot ".workflow/$name"
-    if(-not(Test-Path -LiteralPath $dst)){Copy-Item -LiteralPath (Join-Path $SourceRoot ".workflow/$name") -Destination $dst -Force}
-  }
-  Install-WorkflowConfigs -SourceRoot $SourceRoot -TargetRoot $TargetRoot
-  if($Clients -contains 'codex'){Install-WorkflowCodexSkill -SourceRoot $SourceRoot -TargetRoot $TargetRoot}
-  Install-WorkflowGeneratedAdapters -ProjectRoot $TargetRoot -Clients $Clients
-  $null=Sync-WorkflowConfig -ProjectRoot $TargetRoot
-  Write-WorkflowMetadata -ProjectRoot $TargetRoot -Clients $Clients
-  if($Clients -contains 'cursor'){
-    foreach($legacy in @('.cursor/workflow/version.json','.cursor/workflow/manifest.json')){$p=Join-Path $TargetRoot $legacy;if(Test-Path -LiteralPath $p -PathType Leaf){Remove-Item -LiteralPath $p -Force}}
-    $legacyPack=Join-Path $TargetRoot '.cursor/workflow/pack';if(Test-Path -LiteralPath $legacyPack -PathType Container){Remove-Item -LiteralPath $legacyPack -Recurse -Force}
-    $legacyState=Join-Path $TargetRoot '.cursor/workflow/state.json';if(Test-Path -LiteralPath $legacyState -PathType Leaf){Remove-Item -LiteralPath $legacyState -Force}
-  }
-  if($Clients -contains 'codex'){
-    foreach($legacy in @('.agents/workflow/version.json','.agents/workflow/manifest.json','.agents/workflow/state.json')){$p=Join-Path $TargetRoot $legacy;if(Test-Path -LiteralPath $p -PathType Leaf){Remove-Item -LiteralPath $p -Force}}
-  }
+    if($Clients -contains 'codex'){foreach($legacy in @('.agents/workflow/version.json','.agents/workflow/manifest.json','.agents/workflow/state.json')){$p=Join-Path $TargetRoot $legacy;if(Test-Path -LiteralPath $p -PathType Leaf){Remove-Item -LiteralPath $p -Force}}}
+  } catch {
+    $original=$_.Exception
+    if($snapshot){try{Restore-WorkflowTargetSnapshot $snapshot;if($targetCreated){Remove-WorkflowCreatedTarget $TargetRoot}}catch{throw "workflow install failed: $($original.Message); rollback failed: $($_.Exception.Message)"}}
+    throw $original
+  } finally {if($snapshot){Remove-WorkflowTargetSnapshot $snapshot}}
 }
-
-function Repair-WorkflowInstall { param([string]$ProjectRoot,[string[]]$Clients=@()) if(@($Clients).Count -eq 0){$Clients=Get-WorkflowInstalledClients $ProjectRoot};Install-Workflow -SourceRoot $ProjectRoot -TargetRoot $ProjectRoot -Clients $Clients }
 
 function Get-WorkflowSpecPairErrors {
   param(
@@ -772,6 +720,7 @@ function Invoke-WorkflowDoctor {
       $expectedAgents=Get-WorkflowAgentsBlock $rules;$agents=Join-Path $ProjectRoot 'AGENTS.md'
       if(-not(Test-Path -LiteralPath $agents)){$errors.Add('missing: AGENTS.md')}else{$raw=Read-WorkflowUtf8Text $agents;$pattern='(?ms)'+[regex]::Escape($script:WorkflowAgentsStart)+'.*?'+[regex]::Escape($script:WorkflowAgentsEnd);if($raw -notmatch $pattern){$errors.Add('AGENTS.md missing workflow managed block')}elseif((&$normalize $Matches[0])-ne(&$normalize $expectedAgents)){$errors.Add('generated content drift: AGENTS.md managed block')}}
       foreach($kind in @('prompts','gates')){Get-ChildItem -LiteralPath (Join-Path $ProjectRoot ".workflow/pack/$kind") -File | % {&$compare ('.agents/skills/workflow/references/'+$kind+'/'+$_.Name) (Read-WorkflowUtf8Text $_.FullName)}}
+      foreach($name in @('workflow.ps1','WorkflowRuntime.psm1')){&$compare ('.agents/skills/workflow/bin/'+$name) (Read-WorkflowUtf8Text (Join-Path $ProjectRoot ".workflow/cli/$name"))}
     }
     $gateRoot=Join-Path $ProjectRoot '.workflow/pack/gates'
     if(-not(Test-Path -LiteralPath (Join-Path $gateRoot 'acceptance.md') -PathType Leaf)){$errors.Add('missing contract: .workflow/pack/gates/acceptance.md')}
@@ -786,8 +735,8 @@ function Invoke-WorkflowDoctor {
   }
   if($Clients -contains 'codex'){foreach($legacy in @('.agents/workflow/version.json','.agents/workflow/manifest.json','.agents/workflow/state.json')){if(Test-Path -LiteralPath (Join-Path $ProjectRoot $legacy)){$errors.Add("superseded Codex artifact present: $legacy")}}}
 
-  $wfCfg=Join-Path $ProjectRoot '.workflow/config.workflow.yaml';$projCfg=Join-Path $ProjectRoot '.workflow/config.project.yaml';$mergedCfg=Join-Path $ProjectRoot '.workflow/config.yaml'
-  if((Test-Path $wfCfg) -and (Test-Path $projCfg)){$tmpCfg=Join-Path ([IO.Path]::GetTempPath())('wf-doctor-'+[guid]::NewGuid().ToString('N')+'.yaml');try{Merge-WorkflowConfig $wfCfg $projCfg $tmpCfg;if(-not(Test-Path $mergedCfg) -or (&$normalize(Read-WorkflowUtf8Text $mergedCfg))-ne(&$normalize(Read-WorkflowUtf8Text $tmpCfg))){$errors.Add('generated content drift: .workflow/config.yaml')}}finally{if(Test-Path $tmpCfg){Remove-Item -LiteralPath $tmpCfg -Force}}}
+  $wfCfg=Join-Path $ProjectRoot '.workflow/config.workflow.json';$projCfg=Join-Path $ProjectRoot '.workflow/config.project.json';$mergedCfg=Join-Path $ProjectRoot '.workflow/config.json'
+  if((Test-Path $wfCfg) -and (Test-Path $projCfg)){$tmpCfg=Join-Path ([IO.Path]::GetTempPath())('wf-doctor-'+[guid]::NewGuid().ToString('N')+'.json');try{Merge-WorkflowConfig $wfCfg $projCfg $tmpCfg;if(-not(Test-Path $mergedCfg) -or (&$normalize(Read-WorkflowUtf8Text $mergedCfg))-ne(&$normalize(Read-WorkflowUtf8Text $tmpCfg))){$errors.Add('generated content drift: .workflow/config.json')}}catch{$errors.Add("invalid workflow configuration: $($_.Exception.Message)")}finally{if(Test-Path $tmpCfg){Remove-Item -LiteralPath $tmpCfg -Force}}}else{foreach($path in @($wfCfg,$projCfg,$mergedCfg)){if(-not(Test-Path -LiteralPath $path -PathType Leaf)){$errors.Add('missing: '+$path.Substring($ProjectRoot.Length+1).Replace('\','/'))}}}
 
   if($Clients -contains 'cursor'){
     $legacy = Get-WorkflowNamespaceSkillDirs -SkillsRoot (Join-Path $ProjectRoot '.cursor/skills')
@@ -808,22 +757,9 @@ function Invoke-WorkflowDoctor {
     $errors.Add($e)
   }
 
-  $mergedCfg = Join-Path $ProjectRoot '.workflow/config.yaml'
-  if (Test-Path -LiteralPath $mergedCfg) {
-    $cfgRaw = Get-Content -Raw -LiteralPath $mergedCfg
-    if ($cfgRaw -notmatch '(?m)^schema:\s*\S') {
-      $errors.Add('.workflow/config.yaml missing schema: (expected merged workflow config)')
-    }
-  }
-
-  $schemaJson = Join-Path $ProjectRoot '.workflow/schemas/workflow-contract/schema.json'
-  if (-not (Test-Path $schemaJson)) {
-    $errors.Add('missing: .workflow/schemas/workflow-contract/schema.json')
-  } else {
-    try {
-      $schema = Read-WorkflowJsonFile $schemaJson
-      if ($schema.name -ne 'workflow-contract') { $errors.Add('workflow schema name drift') }
-    } catch { $errors.Add("invalid local workflow schema: $($_.Exception.Message)") }
+  if($Clients -contains 'codex'){
+    try{Test-WorkflowCodexArtifact (Join-Path $ProjectRoot '.agents/skills/workflow')}catch{$errors.Add($_.Exception.Message)}
+    foreach($e in @(Get-WorkflowPublishedLocalDoctorErrors -ProjectRoot $ProjectRoot)){$errors.Add($e)}
   }
 
   $exit = if ($errors.Count -gt 0) { 1 } else { 0 }
@@ -852,31 +788,158 @@ function Test-WorkflowCodexArtifact {
   param([Parameter(Mandatory)][string]$SkillRoot)
   foreach($name in @('SKILL.md','agents/openai.yaml','artifact.json','artifact-manifest.json')){if(-not(Test-Path -LiteralPath (Join-Path $SkillRoot $name) -PathType Leaf)){throw "artifact missing: $name"}}
   $meta=Read-WorkflowJsonFile (Join-Path $SkillRoot 'artifact.json')
+  Assert-WorkflowJsonProperties $meta @('schemaVersion','name','version','contracts','cli') 'artifact metadata'
+  if($meta.schemaVersion -ne 1){throw 'artifact metadata schemaVersion must be 1'}
+  if($meta.name -ne 'workflow'){throw "artifact name drift: $($meta.name)"}
   if($meta.version -ne $script:WorkflowVersion){throw "artifact version drift: expected $script:WorkflowVersion, got $($meta.version)"}
+  if($meta.contracts -ne 'references'){throw "artifact contracts path drift: $($meta.contracts)"}
+  if($meta.cli -ne 'bin/workflow.ps1'){throw "artifact CLI path drift: $($meta.cli)"}
   $manifest=Read-WorkflowJsonFile (Join-Path $SkillRoot 'artifact-manifest.json')
+  Assert-WorkflowJsonProperties $manifest @('schemaVersion','version','files') 'artifact manifest'
+  if($manifest.schemaVersion -ne 1){throw 'artifact manifest schemaVersion must be 1'}
   if($manifest.version -ne $script:WorkflowVersion){throw 'artifact manifest version drift'}
+  if($manifest.files -is [string] -or $null -eq $manifest.files -or @($manifest.files).Count -eq 0){throw 'artifact manifest files must be a non-empty array'}
+  $expected=@{}
   foreach($entry in @($manifest.files)){
+    Assert-WorkflowJsonProperties $entry @('path','sha256') 'artifact manifest entry'
     $rel="$($entry.path)".Replace('\','/')
     if(-not $rel -or [IO.Path]::IsPathRooted("$($entry.path)") -or $rel.StartsWith('/') -or $rel -match '(^|/)\.\.(/|$)'){throw "unsafe artifact path: $rel"}
+    if($expected.ContainsKey($rel)){throw "duplicate artifact path: $rel"};if("$($entry.sha256)" -notmatch '^[A-Fa-f0-9]{64}$'){throw "invalid artifact hash: $rel"};$expected[$rel]=$true
     $path=Join-Path $SkillRoot $rel
     if(-not(Test-Path -LiteralPath $path -PathType Leaf)){throw "artifact file missing: $rel"}
     $actual=Get-WorkflowPortableContentHash $path
     if($actual -ne "$($entry.sha256)"){throw "artifact content drift: $rel"}
   }
+  foreach($file in @(Get-ChildItem -LiteralPath $SkillRoot -Recurse -File|Where-Object{$_.Name -notin @('artifact.json','artifact-manifest.json')})){$rel=$file.FullName.Substring($SkillRoot.Length+1).Replace('\','/');if(-not $expected.ContainsKey($rel)){throw "unmanifested artifact file: $rel"}}
+}
+
+function Get-WorkflowPublishedLocalDoctorErrors {
+  param([Parameter(Mandatory)][string]$ProjectRoot)
+  $errors=New-Object System.Collections.Generic.List[string]
+  $cli=Join-Path $ProjectRoot '.agents/skills/workflow/bin/workflow.ps1'
+  if(-not(Test-Path -LiteralPath $cli -PathType Leaf)){$errors.Add('local Doctor unavailable: .agents/skills/workflow/bin/workflow.ps1 missing');return $errors.ToArray()}
+  try{
+    $raw=@(& $cli -Command doctor -ProjectRoot $ProjectRoot -Arguments @('--json') 2>&1)-join "`n"
+    if($LASTEXITCODE -ne 0){$errors.Add("local Doctor failed: $raw");return $errors.ToArray()}
+    $result=$raw|ConvertFrom-Json
+    if($null -eq $result.Valid){$errors.Add('local Doctor returned an invalid result')}
+    elseif(-not [bool]$result.Valid){foreach($error in @($result.Errors)){$errors.Add("local Doctor: $error")}}
+  }catch{$errors.Add("local Doctor failed: $($_.Exception.Message)")}
+  return $errors.ToArray()
+}
+
+function Test-WorkflowManagedIndex {
+  param([Parameter(Mandatory)][string]$Root,[Parameter(Mandatory)][string]$IndexPath)
+  if(-not(Test-Path -LiteralPath $IndexPath -PathType Leaf)){return}
+  $index=Read-WorkflowJsonFile $IndexPath
+  Assert-WorkflowJsonProperties $index @('files') $IndexPath
+  foreach($rel in @($index.files)){$safe="$rel".Replace('\','/');if(-not $safe -or [IO.Path]::IsPathRooted("$rel") -or $safe.StartsWith('/') -or $safe -match '(^|/)\.\.(/|$)'){throw "unsafe managed path '$safe' in $IndexPath"};$full=[IO.Path]::GetFullPath((Join-Path $Root $safe));$rootFull=[IO.Path]::GetFullPath($Root).TrimEnd('\')+'\';if(-not $full.StartsWith($rootFull,[StringComparison]::OrdinalIgnoreCase)){throw "managed path escapes root: $safe"}}
+}
+
+function Test-WorkflowSchemaDefinition {
+  param([Parameter(Mandatory)][string]$Path,[Parameter(Mandatory)][string]$ExpectedName)
+  $schema=Read-WorkflowJsonFile $Path
+  Assert-WorkflowJsonProperties $schema @('name','version','artifacts') "workflow schema '$ExpectedName'"
+  if($schema.name -ne $ExpectedName){throw "workflow schema name mismatch: $Path"}
+  $schemaVersion=0;if(-not [int]::TryParse("$($schema.version)",[ref]$schemaVersion) -or $schemaVersion -lt 1){throw "workflow schema version must be a positive integer: $Path"}
+  if($schema.artifacts -is [string] -or $null -eq $schema.artifacts -or @($schema.artifacts).Count -eq 0){throw "workflow schema artifacts must be a non-empty array: $Path"}
+  $ids=@{}
+  foreach($artifact in @($schema.artifacts)){
+    Assert-WorkflowJsonProperties $artifact @('id','kind','path','publishPath','required','requires','template','instruction') "workflow schema artifact"
+    if(-not $artifact.id -or -not $artifact.kind -or -not $artifact.path -or -not $artifact.template){throw "workflow schema artifact is incomplete: $Path"}
+    if("$($artifact.id)" -notmatch '^[A-Za-z0-9._-]+$'){throw "invalid workflow artifact id '$($artifact.id)'"}
+    if($artifact.required -isnot [bool]){throw "workflow artifact required must be boolean: $($artifact.id)"}
+    if($artifact.requires -is [string] -or $null -eq $artifact.requires -or $artifact.requires -isnot [array]){throw "workflow artifact requires must be an array: $($artifact.id)"}
+    if($artifact.instruction -isnot [string] -or -not $artifact.instruction.Trim()){throw "workflow artifact instruction must be a non-empty string: $($artifact.id)"}
+    if($artifact.kind -notin @('document','task-list','capability-deltas')){throw "unknown workflow artifact kind '$($artifact.kind)'"}
+    if($artifact.kind -eq 'capability-deltas' -and -not $artifact.publishPath){throw "capability-deltas artifact missing publishPath: $($artifact.id)"}
+    if($artifact.kind -ne 'capability-deltas' -and $artifact.publishPath){throw "publishPath is only valid for capability-deltas: $($artifact.id)"}
+    if($ids.ContainsKey("$($artifact.id)")){throw "duplicate workflow artifact id: $($artifact.id)"};$ids["$($artifact.id)"]=$true
+    foreach($relative in @("$($artifact.path)","$($artifact.template)","$($artifact.publishPath)")|Where-Object{$_}){$safe=$relative.Replace('\','/');if([IO.Path]::IsPathRooted($relative) -or $safe.StartsWith('/') -or $safe -match '(^|/)\.\.(/|$)'){throw "unsafe workflow schema path: $relative"}}
+  }
+  foreach($artifact in @($schema.artifacts)){foreach($dependency in @($artifact.requires)){if($dependency -isnot [string] -or -not $ids.ContainsKey("$dependency")){throw "unknown artifact dependency '$dependency' for $($artifact.id)"};if("$dependency" -eq "$($artifact.id)"){throw "workflow artifact cannot depend on itself: $($artifact.id)"}}}
+  return $schema
+}
+
+function Get-WorkflowSelectedSchemaName {
+  param([Parameter(Mandatory)][string]$SourceRoot,[Parameter(Mandatory)][string]$TargetRoot)
+  $workflowPath=Join-Path $SourceRoot '.workflow/config.workflow.json'
+  $workflow=ConvertFrom-WorkflowConfigText (Read-WorkflowUtf8Text $workflowPath)
+  $projectPath=Join-Path $TargetRoot '.workflow/config.project.json'
+  $project=if(Test-Path -LiteralPath $projectPath -PathType Leaf){ConvertFrom-WorkflowConfigText (Read-WorkflowUtf8Text $projectPath)}else{$null}
+  $name=if($project -and $project.Schema){$project.Schema}else{$workflow.Schema}
+  if(-not $name){throw 'workflow configuration does not select a schema'}
+  return $name
+}
+
+function Install-WorkflowSelectedSchema {
+  param([Parameter(Mandatory)][string]$SourceRoot,[Parameter(Mandatory)][string]$TargetRoot)
+  $projectPath=Join-Path $TargetRoot '.workflow/config.project.json';$project=$null
+  if(Test-Path -LiteralPath $projectPath -PathType Leaf){$project=ConvertFrom-WorkflowConfigText (Read-WorkflowUtf8Text $projectPath)}
+  if($project -and $project.Schema){return}
+  $workflow=ConvertFrom-WorkflowConfigText (Read-WorkflowUtf8Text (Join-Path $SourceRoot '.workflow/config.workflow.json'))
+  if(-not $workflow.Schema){throw 'workflow source configuration does not select a schema'}
+  Copy-WorkflowTree (Join-Path $SourceRoot ".workflow/schemas/$($workflow.Schema)") (Join-Path $TargetRoot ".workflow/schemas/$($workflow.Schema)")
+}
+
+function Test-WorkflowMutationPreflight {
+  param([Parameter(Mandatory)][string]$SourceRoot,[Parameter(Mandatory)][string]$TargetRoot,[string[]]$Clients=@('codex'),[switch]$FullInstall)
+  $Clients=@(Resolve-WorkflowClients $Clients)
+  foreach($rel in @('.workflow/config.workflow.json','.workflow/schemas','.agents/skills/workflow/SKILL.md')){if(-not(Test-Path -LiteralPath (Join-Path $SourceRoot $rel))){throw "source prerequisite missing: $rel"}}
+  if($FullInstall){foreach($rel in @('.workflow/mcp.json','.workflow/rules.json','.workflow/pack/prompts','.workflow/pack/gates','scripts/init.ps1','scripts/doctor.ps1','scripts/lib/WorkflowDeploy.psm1')){if(-not(Test-Path -LiteralPath (Join-Path $SourceRoot $rel))){throw "source prerequisite missing: $rel"}}}
+  if($Clients -contains 'codex'){Test-WorkflowCodexArtifact (Join-Path $SourceRoot '.agents/skills/workflow')}
+  $rulesRoot=if(Test-Path -LiteralPath (Join-Path $TargetRoot '.workflow/rules.json')){$TargetRoot}elseif($FullInstall){$SourceRoot}else{$null};if($rulesRoot){$null=Get-WorkflowRuleEntries $rulesRoot}
+  $mcpRoot=if(Test-Path -LiteralPath (Join-Path $TargetRoot '.workflow/mcp.json')){$TargetRoot}elseif($FullInstall){$SourceRoot}else{$null};if($mcpRoot){$null=Get-WorkflowMcpServers $mcpRoot}
+  $schemaName=Get-WorkflowSelectedSchemaName -SourceRoot $SourceRoot -TargetRoot $TargetRoot
+  $projectConfigPath=Join-Path $TargetRoot '.workflow/config.project.json';$projectConfig=if(Test-Path -LiteralPath $projectConfigPath -PathType Leaf){ConvertFrom-WorkflowConfigText (Read-WorkflowUtf8Text $projectConfigPath)}else{$null}
+  $targetSchema=Join-Path $TargetRoot ".workflow/schemas/$schemaName/schema.json";$sourceSchema=Join-Path $SourceRoot ".workflow/schemas/$schemaName/schema.json";$schemaPath=if($projectConfig -and $projectConfig.Schema){$targetSchema}else{$sourceSchema}
+  if(-not(Test-Path -LiteralPath $schemaPath -PathType Leaf)){throw "selected workflow schema missing: $schemaName"};$null=Test-WorkflowSchemaDefinition -Path $schemaPath -ExpectedName $schemaName
+  foreach($pair in @(@('.cursor/rules','.workflow-managed.json'),@('.agents/rules','.workflow-managed.json'))){$root=Join-Path $TargetRoot $pair[0];Test-WorkflowManagedIndex -Root $root -IndexPath (Join-Path $root $pair[1])}
+  $oldRoot=Join-Path $TargetRoot 'openspec';if(Test-Path -LiteralPath $oldRoot -PathType Container){foreach($name in @('changes','specs')){$old=Join-Path $oldRoot $name;$new=Join-Path $TargetRoot ".workflow/$name";if(Test-Path -LiteralPath $old -PathType Container){foreach($item in @(Get-ChildItem -LiteralPath $old -Force)){if(Test-Path -LiteralPath (Join-Path $new $item.Name)){throw "workflow migration collision: $(Join-Path $new $item.Name)"}}}}}
+}
+
+function New-WorkflowTargetSnapshot {
+  param([Parameter(Mandatory)][string]$TargetRoot,[Parameter(Mandatory)][string[]]$RelativePaths)
+  $snapshotRoot=Join-Path ([IO.Path]::GetTempPath()) ('workflow-target-snapshot-'+[guid]::NewGuid().ToString('N'));New-Item -ItemType Directory -Path $snapshotRoot|Out-Null
+  $entries=New-Object System.Collections.Generic.List[object];$index=0
+  foreach($rel in @($RelativePaths|Sort-Object -Unique)){$target=Join-Path $TargetRoot $rel;$backup=Join-Path $snapshotRoot "$index";$exists=Test-Path -LiteralPath $target;if($exists){Copy-Item -LiteralPath $target -Destination $backup -Recurse -Force};$entries.Add([pscustomobject]@{Relative=$rel;Target=$target;Backup=$backup;Existed=$exists});$index++}
+  return [pscustomobject]@{Root=$snapshotRoot;TargetRoot=$TargetRoot;Entries=$entries.ToArray()}
+}
+
+function Restore-WorkflowTargetSnapshot {
+  param([Parameter(Mandatory)]$Snapshot)
+  $targetRoot=[IO.Path]::GetFullPath($Snapshot.TargetRoot).TrimEnd('\')+'\'
+  foreach($entry in @($Snapshot.Entries)){$target=[IO.Path]::GetFullPath($entry.Target);if(-not $target.StartsWith($targetRoot,[StringComparison]::OrdinalIgnoreCase)){throw "snapshot target escapes project root: $target"};if(Test-Path -LiteralPath $target){Remove-Item -LiteralPath $target -Recurse -Force};if($entry.Existed){$parent=Split-Path -Parent $target;if($parent -and -not(Test-Path -LiteralPath $parent)){New-Item -ItemType Directory -Force -Path $parent|Out-Null};Copy-Item -LiteralPath $entry.Backup -Destination $target -Recurse -Force}}
+}
+
+function Remove-WorkflowTargetSnapshot {
+  param([Parameter(Mandatory)]$Snapshot)
+  $tempRoot=[IO.Path]::GetFullPath([IO.Path]::GetTempPath());$path=[IO.Path]::GetFullPath($Snapshot.Root);if(-not $path.StartsWith($tempRoot,[StringComparison]::OrdinalIgnoreCase) -or (Split-Path -Leaf $path) -notlike 'workflow-target-snapshot-*'){throw "unsafe snapshot cleanup path: $path"};if(Test-Path -LiteralPath $path){$item=Get-Item -LiteralPath $path -Force;if(($item.Attributes -band [IO.FileAttributes]::ReparsePoint)-ne 0){throw "snapshot path is a reparse point: $path"};Remove-Item -LiteralPath $path -Recurse -Force}
+}
+
+function Remove-WorkflowCreatedTarget {
+  param([Parameter(Mandatory)][string]$TargetRoot)
+  if(-not(Test-Path -LiteralPath $TargetRoot)){return}
+  $path=[IO.Path]::GetFullPath($TargetRoot);$root=[IO.Path]::GetPathRoot($path)
+  if($path.TrimEnd('\') -eq $root.TrimEnd('\')){throw "refusing to remove a filesystem root: $path"}
+  $item=Get-Item -LiteralPath $path -Force -ErrorAction Stop
+  if(-not $item.PSIsContainer){throw "created target is not a directory: $path"}
+  if(($item.Attributes -band [IO.FileAttributes]::ReparsePoint)-ne 0){throw "created target is a reparse point: $path"}
+  Remove-Item -LiteralPath $path -Recurse -Force -ErrorAction Stop
 }
 
 function Remove-WorkflowPublishedLegacyScripts {
   param([Parameter(Mandatory)][string]$TargetRoot)
   $candidates=@(
-    @{path='scripts/init.ps1';marker='Install-Workflow'},
-    @{path='scripts/doctor.ps1';marker='Invoke-WorkflowDoctor'},
-    @{path='scripts/lib/WorkflowDeploy.psm1';marker='WorkflowVersion'}
+    @{path='scripts/init.ps1';markers=@('Install the platform-neutral Workflow','Install-Workflow')},
+    @{path='scripts/doctor.ps1';markers=@('Validate a platform-neutral Workflow install','Invoke-WorkflowDoctor')},
+    @{path='scripts/lib/WorkflowDeploy.psm1';markers=@('WorkflowDeploy.psm1','WorkflowVersion','Install-Workflow')}
   )
   foreach($candidate in $candidates){
     $path=Join-Path $TargetRoot $candidate.path
     if(Test-Path -LiteralPath $path -PathType Leaf){
       $text=Read-WorkflowUtf8Text $path
-      if($text -match [regex]::Escape($candidate.marker)){Remove-Item -LiteralPath $path -Force}
+      $owned=$true;foreach($marker in $candidate.markers){if($text -notmatch [regex]::Escape($marker)){$owned=$false;break}};if($owned){Remove-Item -LiteralPath $path -Force}
     }
   }
   $lib=Join-Path $TargetRoot 'scripts/lib'
@@ -897,12 +960,7 @@ function Move-WorkflowLegacyProjectData {
       Remove-Item -LiteralPath $old -Force
     }
   }
-  $oldProject=Join-Path $oldRoot 'config.project.yaml';$oldMerged=Join-Path $oldRoot 'config.yaml';$newProject=Join-Path $newRoot 'config.project.yaml'
-  if(-not(Test-Path -LiteralPath $newProject)){
-    if(Test-Path -LiteralPath $oldProject){Move-Item -LiteralPath $oldProject -Destination $newProject}
-    elseif(Test-Path -LiteralPath $oldMerged){Move-Item -LiteralPath $oldMerged -Destination $newProject}
-  }
-  foreach($name in @('config.workflow.yaml','config.yaml')){$path=Join-Path $oldRoot $name;if(Test-Path -LiteralPath $path){Remove-Item -LiteralPath $path -Force}}
+  foreach($name in @('config.project.yaml','config.workflow.yaml','config.yaml')){$path=Join-Path $oldRoot $name;if(Test-Path -LiteralPath $path){Remove-Item -LiteralPath $path -Force}}
   $schemas=Join-Path $oldRoot 'schemas';if(Test-Path -LiteralPath $schemas -PathType Container){Remove-Item -LiteralPath $schemas -Recurse -Force}
   if(@(Get-ChildItem -LiteralPath $oldRoot -Force).Count -eq 0){Remove-Item -LiteralPath $oldRoot -Force}
 }
@@ -913,25 +971,29 @@ function Publish-WorkflowCodexArtifact {
     [Parameter(Mandatory)][string]$TargetRoot
   )
   $SourceRoot=Resolve-WorkflowPath $SourceRoot;$TargetRoot=Resolve-WorkflowPath $TargetRoot
-  if(-not(Test-Path -LiteralPath $TargetRoot)){New-Item -ItemType Directory -Force -Path $TargetRoot|Out-Null}
-  $sourceSkill=Join-Path $SourceRoot '.agents/skills/workflow'
-  Test-WorkflowCodexArtifact $sourceSkill
-  Move-WorkflowLegacyProjectData $TargetRoot
-  $oldSkill=Join-Path $TargetRoot '.agents/skills/openspec-workflow';if(Test-Path -LiteralPath $oldSkill){Remove-Item -LiteralPath $oldSkill -Recurse -Force}
-  Copy-WorkflowTree $sourceSkill (Join-Path $TargetRoot '.agents/skills/workflow')
-
-  Copy-WorkflowTree (Join-Path $SourceRoot '.workflow/schemas/workflow-contract') (Join-Path $TargetRoot '.workflow/schemas/workflow-contract')
-  Install-WorkflowConfigs -SourceRoot $SourceRoot -TargetRoot $TargetRoot
-  $null=Sync-WorkflowConfig -ProjectRoot $TargetRoot
-  Install-WorkflowAgentsGuidance -ProjectRoot $TargetRoot -RuleEntries @()
-  $servers=Get-WorkflowMcpServers $SourceRoot
-  $block=ConvertTo-WorkflowCodexMcpBlock $servers
-  Set-WorkflowManagedBlock (Join-Path $TargetRoot '.codex/config.toml') $script:WorkflowCodexConfigStart $script:WorkflowCodexConfigEnd $block
-
-  $agentRules=Join-Path $TargetRoot '.agents/rules';$agentIndex=Join-Path $agentRules '.workflow-managed.json'
-  if(Test-Path -LiteralPath $agentIndex -PathType Leaf){Remove-WorkflowIndexedFiles $agentRules $agentIndex;Remove-Item -LiteralPath $agentIndex -Force}
-  foreach($sourceOnly in @('.workflow/pack','.workflow/cli','.workflow/mcp.json','.workflow/rules.json','.workflow/rules','.workflow/version.json','.workflow/manifest.json')){$path=Join-Path $TargetRoot $sourceOnly;if(Test-Path -LiteralPath $path){Remove-Item -LiteralPath $path -Recurse -Force}}
-  Remove-WorkflowPublishedLegacyScripts $TargetRoot
+  $targetExisted=Test-Path -LiteralPath $TargetRoot
+  if($targetExisted -and -not(Test-Path -LiteralPath $TargetRoot -PathType Container)){throw "Target root is not a directory: $TargetRoot"}
+  Test-WorkflowMutationPreflight -SourceRoot $SourceRoot -TargetRoot $TargetRoot -Clients codex
+  $targetCreated=$false
+  $snapshot=New-WorkflowTargetSnapshot -TargetRoot $TargetRoot -RelativePaths @('.workflow','openspec','AGENTS.md','.agents/skills/workflow','.agents/skills/openspec-workflow','.agents/rules','.codex/config.toml','scripts/init.ps1','scripts/doctor.ps1','scripts/lib/WorkflowDeploy.psm1')
+  try{
+    if(-not $targetExisted){New-Item -ItemType Directory -Force -Path $TargetRoot -ErrorAction Stop|Out-Null;$targetCreated=$true}
+    $sourceSkill=Join-Path $SourceRoot '.agents/skills/workflow';Move-WorkflowLegacyProjectData $TargetRoot
+    $oldSkill=Join-Path $TargetRoot '.agents/skills/openspec-workflow';if(Test-Path -LiteralPath $oldSkill){Remove-Item -LiteralPath $oldSkill -Recurse -Force}
+    Copy-WorkflowTree $sourceSkill (Join-Path $TargetRoot '.agents/skills/workflow')
+    Install-WorkflowSelectedSchema -SourceRoot $SourceRoot -TargetRoot $TargetRoot
+    Install-WorkflowConfigs -SourceRoot $SourceRoot -TargetRoot $TargetRoot
+    $null=Sync-WorkflowConfig -ProjectRoot $TargetRoot
+    $rules=if(Test-Path -LiteralPath (Join-Path $TargetRoot '.workflow/rules.json') -PathType Leaf){@(Get-WorkflowRuleEntries $TargetRoot)}else{@()}
+    Install-WorkflowAgentsGuidance -ProjectRoot $TargetRoot -RuleEntries $rules
+    $servers=if(Test-Path -LiteralPath (Join-Path $TargetRoot '.workflow/mcp.json') -PathType Leaf){Get-WorkflowMcpServers $TargetRoot}else{[pscustomobject]@{}};$block=ConvertTo-WorkflowCodexMcpBlock $servers
+    Set-WorkflowManagedBlock (Join-Path $TargetRoot '.codex/config.toml') $script:WorkflowCodexConfigStart $script:WorkflowCodexConfigEnd $block
+    $agentRules=Join-Path $TargetRoot '.agents/rules';$agentIndex=Join-Path $agentRules '.workflow-managed.json'
+    if(Test-Path -LiteralPath $agentIndex -PathType Leaf){Remove-WorkflowIndexedFiles $agentRules $agentIndex;Remove-Item -LiteralPath $agentIndex -Force}
+    if(@($rules).Count){New-Item -ItemType Directory -Force -Path $agentRules|Out-Null;foreach($rule in @($rules)){Write-WorkflowUtf8Text (Join-Path $agentRules $rule.Name) ($rule.Body.TrimEnd()+"`n")};Write-WorkflowUtf8Text $agentIndex (ConvertTo-WorkflowCanonicalJson @{files=@($rules|ForEach-Object{$_.Name})})}
+    foreach($sourceOnly in @('.workflow/pack','.workflow/cli','.workflow/version.json','.workflow/manifest.json')){$path=Join-Path $TargetRoot $sourceOnly;if(Test-Path -LiteralPath $path){Remove-Item -LiteralPath $path -Recurse -Force}}
+    Remove-WorkflowPublishedLegacyScripts $TargetRoot
+  }catch{$original=$_.Exception;try{Restore-WorkflowTargetSnapshot $snapshot;if($targetCreated){Remove-WorkflowCreatedTarget $TargetRoot}}catch{throw "workflow publication failed: $($original.Message); rollback failed: $($_.Exception.Message)"};throw $original}finally{Remove-WorkflowTargetSnapshot $snapshot}
 }
 
 function Invoke-WorkflowArtifactDoctor {
@@ -943,13 +1005,30 @@ function Invoke-WorkflowArtifactDoctor {
   $errors=New-Object System.Collections.Generic.List[string]
   foreach($sourceOnly in @('.workflow/pack','.workflow/cli')){if(Test-Path -LiteralPath (Join-Path $ProjectRoot $sourceOnly)){$errors.Add("downstream source layout present: $sourceOnly")}}
   foreach($old in @('.agents/skills/openspec-workflow','openspec')){if(Test-Path -LiteralPath (Join-Path $ProjectRoot $old)){$errors.Add("superseded workflow path present: $old")}}
-  if(Test-Path -LiteralPath (Join-Path $ProjectRoot '.agents/rules/.workflow-managed.json')){$errors.Add('superseded generated rule index present: .agents/rules/.workflow-managed.json')}
   $skill=Join-Path $ProjectRoot '.agents/skills/workflow'
   try{Test-WorkflowCodexArtifact $skill}catch{$errors.Add($_.Exception.Message)}
-  foreach($candidate in @(@('scripts/init.ps1','Install-Workflow'),@('scripts/doctor.ps1','Invoke-WorkflowDoctor'),@('scripts/lib/WorkflowDeploy.psm1','WorkflowVersion'))){
-    $path=Join-Path $ProjectRoot $candidate[0]
-    if((Test-Path -LiteralPath $path -PathType Leaf) -and (Read-WorkflowUtf8Text $path) -match [regex]::Escape($candidate[1])){$errors.Add("deployment engine present downstream: $($candidate[0])")}
+  try{
+    $normalize={param($text)(($text-replace "`r`n","`n").TrimEnd()+"`n")}
+    $rules=if(Test-Path -LiteralPath (Join-Path $ProjectRoot '.workflow/rules.json') -PathType Leaf){@(Get-WorkflowRuleEntries $ProjectRoot)}else{@()}
+    $ruleIndex=Join-Path $ProjectRoot '.agents/rules/.workflow-managed.json'
+    if(@($rules).Count){
+      foreach($rule in @($rules)){$path=Join-Path $ProjectRoot ('.agents/rules/'+$rule.Name);if(-not(Test-Path -LiteralPath $path -PathType Leaf)){$errors.Add("missing generated project rule: .agents/rules/$($rule.Name)")}elseif((&$normalize(Read-WorkflowUtf8Text $path))-ne(&$normalize $rule.Body)){$errors.Add("generated project rule drift: .agents/rules/$($rule.Name)")}}
+      $expectedIndex=ConvertTo-WorkflowCanonicalJson @{files=@($rules|ForEach-Object{$_.Name})};if(-not(Test-Path -LiteralPath $ruleIndex -PathType Leaf)){$errors.Add('missing generated project rule index: .agents/rules/.workflow-managed.json')}elseif((&$normalize(Read-WorkflowUtf8Text $ruleIndex))-ne(&$normalize $expectedIndex)){$errors.Add('generated project rule index drift: .agents/rules/.workflow-managed.json')}
+    }elseif(Test-Path -LiteralPath $ruleIndex){$errors.Add('stale generated project rule index: .agents/rules/.workflow-managed.json')}
+    $agentsPath=Join-Path $ProjectRoot 'AGENTS.md';$expectedAgents=Get-WorkflowAgentsBlock $rules
+    if(-not(Test-Path -LiteralPath $agentsPath -PathType Leaf)){$errors.Add('missing: AGENTS.md')}else{$raw=Read-WorkflowUtf8Text $agentsPath;$pattern='(?ms)'+[regex]::Escape($script:WorkflowAgentsStart)+'.*?'+[regex]::Escape($script:WorkflowAgentsEnd);if($raw -notmatch $pattern){$errors.Add('AGENTS.md missing workflow managed block')}elseif((&$normalize $Matches[0])-ne(&$normalize $expectedAgents)){$errors.Add('generated content drift: AGENTS.md managed block')}}
+    $servers=if(Test-Path -LiteralPath (Join-Path $ProjectRoot '.workflow/mcp.json') -PathType Leaf){Get-WorkflowMcpServers $ProjectRoot}else{[pscustomobject]@{}};$expectedBlock=ConvertTo-WorkflowCodexMcpBlock $servers;$codexPath=Join-Path $ProjectRoot '.codex/config.toml'
+    if(-not(Test-Path -LiteralPath $codexPath -PathType Leaf)){$errors.Add('missing: .codex/config.toml')}else{$raw=Read-WorkflowUtf8Text $codexPath;$pattern='(?ms)'+[regex]::Escape($script:WorkflowCodexConfigStart)+'.*?'+[regex]::Escape($script:WorkflowCodexConfigEnd);if($raw -notmatch $pattern){$errors.Add('.codex/config.toml missing workflow managed MCP block')}elseif((&$normalize $Matches[0])-ne(&$normalize $expectedBlock)){$errors.Add('generated content drift: .codex/config.toml managed MCP block')}}
+  }catch{$errors.Add("invalid project integration source: $($_.Exception.Message)")}
+  foreach($candidate in @(
+    @{path='scripts/init.ps1';markers=@('Install the platform-neutral Workflow','Install-Workflow')},
+    @{path='scripts/doctor.ps1';markers=@('Validate a platform-neutral Workflow install','Invoke-WorkflowDoctor')},
+    @{path='scripts/lib/WorkflowDeploy.psm1';markers=@('WorkflowDeploy.psm1','WorkflowVersion','Install-Workflow')}
+  )){
+    $path=Join-Path $ProjectRoot $candidate.path
+    if(Test-Path -LiteralPath $path -PathType Leaf){$text=Read-WorkflowUtf8Text $path;$owned=$true;foreach($marker in $candidate.markers){if($text -notmatch [regex]::Escape($marker)){$owned=$false;break}};if($owned){$errors.Add("deployment engine present downstream: $($candidate.path)")}}
   }
+  foreach($e in @(Get-WorkflowPublishedLocalDoctorErrors -ProjectRoot $ProjectRoot)){$errors.Add($e)}
   if($SourceRoot){
     $SourceRoot=Resolve-WorkflowPath $SourceRoot;$sourceSkill=Join-Path $SourceRoot '.agents/skills/workflow'
     try{Test-WorkflowCodexArtifact $sourceSkill}catch{$errors.Add("source artifact invalid: $($_.Exception.Message)")}
@@ -964,7 +1043,6 @@ function Invoke-WorkflowArtifactDoctor {
     }
   }
   foreach($e in (Get-WorkflowSpecPairErrors $ProjectRoot)){$errors.Add($e)}
-  $schema=Join-Path $ProjectRoot '.workflow/schemas/workflow-contract/schema.json';if(-not(Test-Path -LiteralPath $schema -PathType Leaf)){$errors.Add('missing: .workflow/schemas/workflow-contract/schema.json')}
   return [pscustomobject]@{ExitCode=if($errors.Count){1}else{0};Errors=$errors.ToArray()}
 }
 
@@ -986,7 +1064,6 @@ Export-ModuleMember -Function @(
   'Install-WorkflowConfigs',
   'Sync-WorkflowConfig',
   'Install-Workflow',
-  'Repair-WorkflowInstall',
   'Invoke-WorkflowDoctor',
   'Get-WorkflowSpecPairErrors'
 )

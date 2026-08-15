@@ -1,7 +1,7 @@
 # design-review Specification
 
 ## Purpose
-TBD - created by archiving change workflow-v2. Update Purpose after archive.
+Define the optional design-review stage that challenges a change before implementation while keeping decisions in authoritative artifacts.
 ## Requirements
 ### Requirement: Grilling as pack short file
 Design review (grilling) SHALL be delivered as a short pack file at `.workflow/pack/prompts/grill.md`, not as a standalone skill framework. The generated client adapter SHALL load this file before questioning the user.

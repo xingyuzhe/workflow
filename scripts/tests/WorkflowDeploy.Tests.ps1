@@ -13,24 +13,35 @@ function Assert-Throws([scriptblock]$Action, [string]$Pattern, [string]$msg) {
   try { & $Action; Assert-True $false $msg }
   catch { Assert-True ($_.Exception.Message -match $Pattern) $msg }
 }
+function Get-TreeFingerprint([string]$Root) {
+  if (-not (Test-Path -LiteralPath $Root)) { return '<missing>' }
+  return (@(Get-ChildItem -LiteralPath $Root -Recurse -Force | Sort-Object FullName | ForEach-Object {
+    $rel=$_.FullName.Substring($Root.Length).Replace('\','/')
+    if($_.PSIsContainer){'D:'+ $rel}else{'F:'+ $rel + ':' + (Get-FileHash -Algorithm SHA256 -LiteralPath $_.FullName).Hash}
+  }) -join "`n")
+}
 
 $tmp = Join-Path ([IO.Path]::GetTempPath()) ("wf-deploy-test-" + [guid]::NewGuid().ToString('N'))
 New-Item -ItemType Directory -Path $tmp | Out-Null
 try {
+  Build-WorkflowCodexArtifact -SourceRoot $repoRoot | Out-Null
   $skills = Join-Path $tmp 'skills'
   New-Item -ItemType Directory -Path (Join-Path $skills 'superpowers-v6.1.1') | Out-Null
   New-Item -ItemType Directory -Path (Join-Path $skills 'openspec-v1.5.0') | Out-Null
   New-Item -ItemType Directory -Path (Join-Path $skills 'grilling') | Out-Null
   New-Item -ItemType Directory -Path (Join-Path $skills 'workflow') | Out-Null
+  New-Item -ItemType Directory -Path (Join-Path $skills 'workflow-private') | Out-Null
   New-Item -ItemType Directory -Path (Join-Path $skills 'my-other-skill') | Out-Null
 
   $found = @(Get-WorkflowNamespaceSkillDirs -SkillsRoot $skills)
   Assert-True ($found.Count -eq 4) "finds 4 namespace skill dirs"
   Assert-True (-not ($found | Where-Object { $_.Name -eq 'my-other-skill' })) "ignores unrelated skills"
+  Assert-True (-not ($found | Where-Object { $_.Name -eq 'workflow-private' })) "does not claim workflow-prefixed private skills"
 
   Remove-WorkflowNamespaceSkills -SkillsRoot $skills
   Assert-True (-not (Test-Path (Join-Path $skills 'superpowers-v6.1.1'))) "purges superpowers"
   Assert-True (Test-Path (Join-Path $skills 'my-other-skill')) "keeps unrelated skills"
+  Assert-True (Test-Path (Join-Path $skills 'workflow-private')) "keeps workflow-prefixed private skills"
 
   $rules = Join-Path $tmp 'rules'
   $commands = Join-Path $tmp 'commands'
@@ -54,7 +65,9 @@ try {
   # install into disposable project from real source; seed legacy skill then expect doctor fail then pass after purge
   $proj = Join-Path $tmp 'proj'
   New-Item -ItemType Directory -Force -Path (Join-Path $proj '.cursor\skills\openspec-v1.5.0') | Out-Null
+  New-Item -ItemType Directory -Force -Path (Join-Path $proj '.cursor\skills\workflow-private') | Out-Null
   Set-Content (Join-Path $proj '.cursor\skills\openspec-v1.5.0\SKILL.md') 'legacy'
+  Set-Content (Join-Path $proj '.cursor\skills\workflow-private\SKILL.md') 'private workflow helper'
   New-Item -ItemType Directory -Force -Path (Join-Path $proj '.workflow\rules') | Out-Null
   @(
     '---',
@@ -99,7 +112,7 @@ try {
   ) | Set-Content -Encoding utf8 (Join-Path $proj '.workflow\rules.json')
   Set-Content -Encoding utf8 (Join-Path $proj 'AGENTS.md') "# Project guidance`n`nKeep this custom guidance.`n"
   New-Item -ItemType Directory -Force -Path (Join-Path $proj 'openspec\specs\keep-me') | Out-Null
-  Set-Content (Join-Path $proj 'openspec\specs\keep-me\spec.md') 'business spec stays'
+  Set-Content (Join-Path $proj 'openspec\specs\keep-me\spec.md') "# keep-me Specification`n`n## Purpose`n`nKeep project behavior.`n`n### Requirement: Preserve business behavior`nThe project SHALL preserve its accepted behavior.`n`n#### Scenario: Validate accepted behavior`n- **WHEN** Doctor validates the project`n- **THEN** the accepted specification remains valid`n"
 
   # doctor on incomplete project fails
   $r0 = Invoke-WorkflowDoctor -ProjectRoot $proj
@@ -107,6 +120,7 @@ try {
 
   Install-Workflow -SourceRoot $repoRoot -TargetRoot $proj
   Assert-True (-not (Test-Path (Join-Path $proj '.cursor\skills\openspec-v1.5.0'))) "install purges legacy skills"
+  Assert-True ((Get-Content -Raw (Join-Path $proj '.cursor\skills\workflow-private\SKILL.md')) -match 'private workflow helper') "install preserves workflow-prefixed private skill"
   Assert-True (Test-Path (Join-Path $proj '.workflow\specs\keep-me\spec.md')) "migrates and preserves business specs"
   Assert-True (-not(Test-Path (Join-Path $proj 'openspec'))) "removes superseded openspec data root"
   Assert-True (Test-Path (Join-Path $proj '.workflow\pack\prompts\apply.md')) "installs neutral apply prompt"
@@ -167,9 +181,9 @@ try {
   $rDrift = Invoke-WorkflowDoctor -ProjectRoot $proj
   Assert-True ($rDrift.ExitCode -ne 0) "doctor reports generated content drift"
   Assert-True ((Get-Content -Raw -Encoding utf8 $generatedRule) -eq $beforeDoctor) "doctor is read-only"
-  Repair-WorkflowInstall -ProjectRoot $proj
-  Assert-True ((Get-Content -Raw -Encoding utf8 $generatedRule) -match 'Early project rule') "explicit repair restores generated rule"
-  Assert-True ((Invoke-WorkflowDoctor -ProjectRoot $proj).ExitCode -eq 0) "doctor passes after explicit repair"
+  Install-Workflow -SourceRoot $repoRoot -TargetRoot $proj
+  Assert-True ((Get-Content -Raw -Encoding utf8 $generatedRule) -match 'Early project rule') "explicit reinstall restores generated rule"
+  Assert-True ((Invoke-WorkflowDoctor -ProjectRoot $proj).ExitCode -eq 0) "doctor passes after explicit reinstall"
 
   # unpaired main spec → doctor fails
   Remove-Item -Force (Join-Path $proj '.workflow\specs\keep-me\design.md')
@@ -187,113 +201,67 @@ try {
   # --- config isolation merge ---
   $cfgDir = Join-Path $tmp 'cfg'
   New-Item -ItemType Directory -Force -Path $cfgDir | Out-Null
-  $wfOnly = Join-Path $cfgDir 'workflow-only.yaml'
-  $projRules = Join-Path $cfgDir 'project-rules.yaml'
-  $out1 = Join-Path $cfgDir 'out1.yaml'
-  @(
-    'schema: workflow-contract',
-    'rules:',
-    '  proposal:',
-    '    - Own Why only',
-    '  specs:',
-    '    - Both spec and design'
-  ) | Set-Content -Encoding utf8 $wfOnly
+  $wfOnly = Join-Path $cfgDir 'workflow-only.json'
+  $projRules = Join-Path $cfgDir 'project-rules.json'
+  $out1 = Join-Path $cfgDir 'out1.json'
+  Set-Content -Encoding utf8 $wfOnly '{"schema":"workflow-contract","rules":{"proposal":["Own Why only"],"capabilities":["Both spec and design"]}}'
   Merge-WorkflowConfig -WorkflowPath $wfOnly -ProjectPath $null -OutPath $out1
-  $o1 = Get-Content -Raw $out1
-  Assert-True ($o1 -match 'schema:\s*workflow-contract') "merge workflow-only keeps schema"
-  Assert-True ($o1 -match 'Own Why only') "merge workflow-only keeps rules"
-  Assert-True ($o1 -match 'AUTO-GENERATED|DO NOT EDIT') "merged file has generated banner"
+  $o1 = Get-Content -Raw $out1 | ConvertFrom-Json
+  Assert-True ($o1.schema -eq 'workflow-contract') "merge workflow-only keeps schema"
+  Assert-True (@($o1.rules.proposal) -contains 'Own Why only') "merge workflow-only keeps rules"
+  Assert-True ((Get-Content -Raw $out1).TrimStart().StartsWith('{')) "merged configuration is strict JSON"
 
-  @(
-    'schema: custom-schema',
-    'rules:',
-    '  proposal:',
-    '    - Own Why only',
-    '    - Project private rule',
-    '  design:',
-    '    - Project design rule'
-  ) | Set-Content -Encoding utf8 $projRules
-  $out2 = Join-Path $cfgDir 'out2.yaml'
+  Set-Content -Encoding utf8 $projRules '{"schema":"custom-schema","rules":{"proposal":["Own Why only","Project private rule"],"design":["Project design rule"]}}'
+  $out2 = Join-Path $cfgDir 'out2.json'
   Merge-WorkflowConfig -WorkflowPath $wfOnly -ProjectPath $projRules -OutPath $out2
-  $o2 = Get-Content -Raw $out2
-  Assert-True ($o2 -match 'schema:\s*custom-schema') "project schema overrides"
-  Assert-True ($o2 -match 'Project private rule') "project rules appended"
-  Assert-True (($o2 -split 'Own Why only').Count -eq 2) "dedupes repeated rule text"
+  $o2 = Get-Content -Raw $out2 | ConvertFrom-Json
+  Assert-True ($o2.schema -eq 'custom-schema') "project schema overrides"
+  Assert-True (@($o2.rules.proposal) -contains 'Project private rule') "project rules appended"
+  Assert-True (@($o2.rules.proposal|Where-Object{$_ -eq 'Own Why only'}).Count -eq 1) "dedupes repeated rule text"
+  Set-Content -Encoding utf8 (Join-Path $cfgDir 'invalid.json') '{"schema":"workflow-contract","rules":{"proposal":"not-an-array"}}'
+  Assert-Throws { Merge-WorkflowConfig -WorkflowPath (Join-Path $cfgDir 'invalid.json') -ProjectPath $null -OutPath (Join-Path $cfgDir 'invalid-out.json') } 'must be an array' "strict JSON rejects invalid rule shapes"
+  Set-Content -Encoding utf8 (Join-Path $cfgDir 'unknown.json') '{"schema":"workflow-contract","rules":{},"unknown":true}'
+  Assert-Throws { Merge-WorkflowConfig -WorkflowPath (Join-Path $cfgDir 'unknown.json') -ProjectPath $null -OutPath (Join-Path $cfgDir 'unknown-out.json') } 'unsupported field' "strict JSON rejects unknown fields"
 
-  # install: never overwrite project config; migrate bare config.yaml once
+  # install: never overwrite project config and never reinterpret generated config as project input
   $proj2 = Join-Path $tmp 'proj2'
-  New-Item -ItemType Directory -Force -Path (Join-Path $proj2 'openspec') | Out-Null
-  @(
-    'schema: old-project',
-    'rules:',
-    '  proposal:',
-    '    - Keep my private rule forever'
-  ) | Set-Content -Encoding utf8 (Join-Path $proj2 'openspec\config.yaml')
+  New-Item -ItemType Directory -Force -Path (Join-Path $proj2 '.workflow') | Out-Null
+  Set-Content -Encoding utf8 (Join-Path $proj2 '.workflow\config.project.json') '{"rules":{"proposal":["Keep my private rule forever"]}}'
+  Set-Content -Encoding utf8 (Join-Path $proj2 '.workflow\config.json') '{"schema":"workflow-contract","rules":{"proposal":["generated content must not become project input"]}}'
   Install-Workflow -SourceRoot $repoRoot -TargetRoot $proj2
-  Assert-True (Test-Path (Join-Path $proj2 '.workflow\config.workflow.yaml')) "writes config.workflow.yaml"
-  Assert-True (Test-Path (Join-Path $proj2 '.workflow\config.project.yaml')) "creates config.project.yaml via migrate"
-  $projCfg1 = Get-Content -Raw (Join-Path $proj2 '.workflow\config.project.yaml')
-  Assert-True ($projCfg1 -match 'Keep my private rule forever') "migrated private rule into project file"
-  $merged1 = Get-Content -Raw (Join-Path $proj2 '.workflow\config.yaml')
+  Assert-True (Test-Path (Join-Path $proj2 '.workflow\config.workflow.json')) "writes config.workflow.json"
+  Assert-True (Test-Path (Join-Path $proj2 '.workflow\config.project.json')) "preserves config.project.json"
+  $projCfg1 = Get-Content -Raw (Join-Path $proj2 '.workflow\config.project.json')
+  Assert-True ($projCfg1 -match 'Keep my private rule forever') "preserves private project rules"
+  Assert-True ($projCfg1 -notmatch 'generated content must not become project input') "does not promote generated config to project input"
+  $merged1 = Get-Content -Raw (Join-Path $proj2 '.workflow\config.json')
   Assert-True ($merged1 -match 'Keep my private rule forever') "merged config includes private rule"
-  Assert-True ($merged1 -notmatch 'Both spec|Own Why|create BOTH|Never leave') "merged config does not duplicate schema artifact contracts"
-
-  @(
-    'schema: workflow-contract',
-    'rules:',
-    '  proposal:',
-    '    - Keep my private rule forever',
-    '    - Second private line'
-  ) | Set-Content -Encoding utf8 (Join-Path $proj2 '.workflow\config.project.yaml')
+  Set-Content -Encoding utf8 (Join-Path $proj2 '.workflow\config.project.json') '{"rules":{"proposal":["Keep my private rule forever","Second private line"]}}'
   Install-Workflow -SourceRoot $repoRoot -TargetRoot $proj2
-  $projCfg2 = Get-Content -Raw (Join-Path $proj2 '.workflow\config.project.yaml')
+  $projCfg2 = Get-Content -Raw (Join-Path $proj2 '.workflow\config.project.json')
   Assert-True ($projCfg2 -match 'Second private line') "second install does not overwrite project config"
 
   # machine sync remains explicit; doctor only reports stale generated config
-  @(
-    'schema: workflow-contract',
-    'rules:',
-    '  proposal:',
-    '    - Keep my private rule forever',
-    '    - DoctorAutoSyncRule'
-  ) | Set-Content -Encoding utf8 (Join-Path $proj2 '.workflow\config.project.yaml')
-  @(
-    'schema: workflow-contract',
-    'rules:',
-    '  proposal:',
-    '    - stale merged only'
-  ) | Set-Content -Encoding utf8 (Join-Path $proj2 '.workflow\config.yaml')
+  Set-Content -Encoding utf8 (Join-Path $proj2 '.workflow\config.project.json') '{"rules":{"proposal":["Keep my private rule forever","DoctorAutoSyncRule"]}}'
+  Set-Content -Encoding utf8 (Join-Path $proj2 '.workflow\config.json') '{"schema":"workflow-contract","rules":{"proposal":["stale merged only"]}}'
   $sync1 = Sync-WorkflowConfig -ProjectRoot $proj2
   Assert-True ($sync1.Changed -eq $true) "sync merges when project changed"
   Assert-True ($sync1.Status -eq 'Merged') "sync status Merged"
-  $healed = Get-Content -Raw (Join-Path $proj2 '.workflow\config.yaml')
-  Assert-True ($healed -match 'DoctorAutoSyncRule') "sync writes project rule into config.yaml"
+  $healed = Get-Content -Raw (Join-Path $proj2 '.workflow\config.json')
+  Assert-True ($healed -match 'DoctorAutoSyncRule') "sync writes project rule into config.json"
   $sync2 = Sync-WorkflowConfig -ProjectRoot $proj2
   Assert-True ($sync2.Changed -eq $false) "second sync is no-op when up to date"
   Assert-True ($sync2.Status -eq 'Unchanged') "sync status Unchanged"
 
-  @(
-    'schema: workflow-contract',
-    'rules:',
-    '  proposal:',
-    '    - Keep my private rule forever',
-    '    - DoctorAutoSyncRule',
-    '    - ViaDoctorRule'
-  ) | Set-Content -Encoding utf8 (Join-Path $proj2 '.workflow\config.project.yaml')
-  @(
-    '# stale',
-    'schema: workflow-contract',
-    'rules:',
-    '  proposal:',
-    '    - Keep my private rule forever'
-  ) | Set-Content -Encoding utf8 (Join-Path $proj2 '.workflow\config.yaml')
-  $beforeDocConfig = Get-Content -Raw (Join-Path $proj2 '.workflow\config.yaml')
+  Set-Content -Encoding utf8 (Join-Path $proj2 '.workflow\config.project.json') '{"rules":{"proposal":["Keep my private rule forever","DoctorAutoSyncRule","ViaExplicitSync"]}}'
+  Set-Content -Encoding utf8 (Join-Path $proj2 '.workflow\config.json') '{"schema":"workflow-contract","rules":{"proposal":["Keep my private rule forever"]}}'
+  $beforeDocConfig = Get-Content -Raw (Join-Path $proj2 '.workflow\config.json')
   $rDocSync = Invoke-WorkflowDoctor -ProjectRoot $proj2
   Assert-True ($rDocSync.ExitCode -ne 0) "doctor reports stale merged config"
-  $viaDoc = Get-Content -Raw (Join-Path $proj2 '.workflow\config.yaml')
+  $viaDoc = Get-Content -Raw (Join-Path $proj2 '.workflow\config.json')
   Assert-True ($viaDoc -eq $beforeDocConfig) "doctor does not auto-sync project rules"
-  Repair-WorkflowInstall -ProjectRoot $proj2
-  Assert-True ((Get-Content -Raw (Join-Path $proj2 '.workflow\config.yaml')) -match 'ViaDoctorRule') "explicit repair syncs project rules"
+  $null=Sync-WorkflowConfig -ProjectRoot $proj2
+  Assert-True ((Get-Content -Raw (Join-Path $proj2 '.workflow\config.json')) -match 'ViaExplicitSync') "explicit config sync updates generated rules"
 
   # reintroduce legacy → doctor fails
   New-Item -ItemType Directory -Force -Path (Join-Path $proj '.cursor\skills\superpowers-v9') | Out-Null
@@ -307,13 +275,34 @@ try {
   Assert-True (Test-Path (Join-Path $repoRoot '.cursor\commands\workflow-apply.md')) "self-init preserves workflow-apply"
   Assert-True (Test-Path (Join-Path $repoRoot '.agents\skills\workflow\SKILL.md')) "self-init preserves Codex workflow skill"
 
+  $sourceGeneratedCli=Join-Path $repoRoot '.agents\skills\workflow\bin\WorkflowRuntime.psm1'
+  $sourceGeneratedBackup=Join-Path $tmp 'source-generated-cli.backup';Copy-Item -LiteralPath $sourceGeneratedCli -Destination $sourceGeneratedBackup
+  [IO.File]::AppendAllText($sourceGeneratedCli,"generated drift",[Text.UTF8Encoding]::new($false))
+  $sourceDriftDoctor=Invoke-WorkflowDoctor -ProjectRoot $repoRoot
+  Assert-True ($sourceDriftDoctor.ExitCode -ne 0 -and (($sourceDriftDoctor.Errors -join "`n") -match 'WorkflowRuntime|artifact content drift')) "source Doctor rejects generated CLI drift"
+  Copy-Item -LiteralPath $sourceGeneratedBackup -Destination $sourceGeneratedCli -Force
+
   $bad = Join-Path $tmp 'bad'
   New-Item -ItemType Directory -Force -Path (Join-Path $bad '.workflow') | Out-Null
   Set-Content -Encoding utf8 (Join-Path $bad '.workflow\mcp.json') '{ "schemaVersion": 1, "servers": { "bad": { "transport": "stdio", "command": "x", "mystery": true } } }'
   Set-Content -Encoding utf8 (Join-Path $bad '.workflow\rules.json') '{ "schemaVersion": 1, "rules": [] }'
+  Set-Content -Encoding utf8 (Join-Path $bad 'private.txt') 'must survive failed preflight'
+  $badBefore=Get-TreeFingerprint $bad
   Assert-Throws { Install-Workflow -SourceRoot $repoRoot -TargetRoot $bad } 'mystery' "unknown MCP fields fail explicitly"
+  Assert-True ((Get-TreeFingerprint $bad) -eq $badBefore) "invalid preflight leaves target byte-for-byte unchanged"
+  Assert-True (-not(Test-Path (Join-Path $bad '.workflow\pack'))) "invalid preflight creates no partial workflow runtime"
   Set-Content -Encoding utf8 (Join-Path $bad '.workflow\mcp.json') '{ "schemaVersion": 1, "servers": { "bad": { "transport": "stdio", "command": "x", "enabled": "yes" } } }'
   Assert-Throws { Install-Workflow -SourceRoot $repoRoot -TargetRoot $bad } 'enabled.*boolean' "invalid MCP field types fail explicitly"
+
+  # A deterministic post-preflight failure must restore every path already changed.
+  $rollbackTarget=Join-Path $tmp 'rollback-install';New-Item -ItemType Directory -Force -Path (Join-Path $rollbackTarget '.cursor\skills\workflow')|Out-Null
+  New-Item -ItemType Directory -Force -Path (Join-Path $rollbackTarget '.workflow\specs\keep')|Out-Null
+  Set-Content -Encoding utf8 (Join-Path $rollbackTarget '.cursor\skills\workflow\SKILL.md') 'old runtime'
+  Set-Content -Encoding utf8 (Join-Path $rollbackTarget '.workflow\specs\keep\spec.md') 'old spec'
+  Set-Content -Encoding utf8 (Join-Path $rollbackTarget 'scripts') 'project file blocks deployment directory'
+  $rollbackBefore=Get-TreeFingerprint $rollbackTarget
+  Assert-Throws { Install-Workflow -SourceRoot $repoRoot -TargetRoot $rollbackTarget } 'scripts|container|directory|exists' "install reports a mutation failure after preflight"
+  Assert-True ((Get-TreeFingerprint $rollbackTarget) -eq $rollbackBefore) "install rollback restores the original target tree"
 
   # Codex-only deployment must treat the entire Cursor tree as out of scope.
   $codexOnly = Join-Path $tmp 'codex-only'
@@ -336,23 +325,45 @@ try {
   $codexMetadata = Get-Content -Raw (Join-Path $codexOnly '.workflow\version.json') | ConvertFrom-Json
   Assert-True ((@($codexMetadata.clients) -join ',') -eq 'codex') "Codex-only metadata records only Codex"
   Assert-True ((Invoke-WorkflowDoctor -ProjectRoot $codexOnly).ExitCode -eq 0) "Codex-only doctor ignores Cursor-private content"
-  Repair-WorkflowInstall -ProjectRoot $codexOnly
-  Assert-True ((&$cursorFingerprint) -eq $cursorBefore) "Codex-only repair preserves installed client scope"
+  Install-Workflow -SourceRoot $repoRoot -TargetRoot $codexOnly -Clients codex
+  Assert-True ((&$cursorFingerprint) -eq $cursorBefore) "Codex-only reinstall preserves installed client scope"
 
   # Published downstream repositories receive only the built artifact, never its neutral source.
   Build-WorkflowCodexArtifact -SourceRoot $repoRoot | Out-Null
+  $publishRollback=Join-Path $tmp 'rollback-publish';New-Item -ItemType Directory -Force -Path (Join-Path $publishRollback '.agents\skills\workflow')|Out-Null
+  Set-Content -Encoding utf8 (Join-Path $publishRollback '.agents\skills\workflow\private.txt') 'old published runtime'
+  Set-Content -Encoding utf8 (Join-Path $publishRollback '.codex') 'project file blocks managed config directory'
+  $publishRollbackBefore=Get-TreeFingerprint $publishRollback
+  Assert-Throws { Publish-WorkflowCodexArtifact -SourceRoot $repoRoot -TargetRoot $publishRollback } '\.codex|container|directory|exists' "publication reports a mutation failure after preflight"
+  Assert-True ((Get-TreeFingerprint $publishRollback) -eq $publishRollbackBefore) "publication rollback restores the original target tree"
+
+  $customSource=Join-Path $tmp 'custom-source';$customSourceSkill=Join-Path $customSource '.agents\skills';$customSourceSchema=Join-Path $customSource '.workflow\schemas\portable-flow\templates'
+  New-Item -ItemType Directory -Force -Path $customSourceSkill,$customSourceSchema|Out-Null
+  Copy-Item -LiteralPath (Join-Path $repoRoot '.agents\skills\workflow') -Destination (Join-Path $customSourceSkill 'workflow') -Recurse -Force
+  Set-Content -Encoding utf8 (Join-Path $customSource '.workflow\config.workflow.json') '{"schema":"portable-flow","rules":{}}'
+  Set-Content -Encoding utf8 (Join-Path $customSource '.workflow\schemas\portable-flow\schema.json') '{"name":"portable-flow","version":1,"artifacts":[{"id":"brief","kind":"document","path":"brief.md","required":true,"requires":[],"template":"templates/brief.md","instruction":"Write the brief."}]}'
+  Set-Content -Encoding utf8 (Join-Path $customSourceSchema 'brief.md') "# Brief`n"
+  $customPublished=Join-Path $tmp 'custom-source-published'
+  Publish-WorkflowCodexArtifact -SourceRoot $customSource -TargetRoot $customPublished
+  Assert-True (Test-Path (Join-Path $customPublished '.workflow\schemas\portable-flow\schema.json')) "publication copies the workflow-selected custom schema"
+  Assert-True (-not(Test-Path (Join-Path $customPublished '.workflow\schemas\workflow-contract'))) "publication does not require a hard-coded workflow-contract schema"
+  Assert-True (((Get-Content -Raw (Join-Path $customPublished '.workflow\config.json')|ConvertFrom-Json).schema) -eq 'portable-flow') "publication records the workflow-selected custom schema"
+
   $published = Join-Path $tmp 'published-artifact'
   New-Item -ItemType Directory -Force -Path (Join-Path $published '.agents\rules') | Out-Null
   New-Item -ItemType Directory -Force -Path (Join-Path $published '.agents\skills\private-skill') | Out-Null
-  New-Item -ItemType Directory -Force -Path (Join-Path $published '.workflow\pack') | Out-Null
+  New-Item -ItemType Directory -Force -Path (Join-Path $published '.workflow\pack'),(Join-Path $published '.workflow\rules') | Out-Null
   New-Item -ItemType Directory -Force -Path (Join-Path $published 'scripts\lib') | Out-Null
   Set-Content -Encoding utf8 (Join-Path $published '.agents\rules\private.md') 'private rule'
   Set-Content -Encoding utf8 (Join-Path $published '.agents\skills\private-skill\SKILL.md') 'private skill'
   Set-Content -Encoding utf8 (Join-Path $published '.workflow\pack\source.md') 'must not ship'
+  Set-Content -Encoding utf8 (Join-Path $published '.workflow\rules\project.md') "# Project rule`n`nPreserve project-specific guidance.`n"
+  Set-Content -Encoding utf8 (Join-Path $published '.workflow\rules.json') '{"schemaVersion":1,"rules":[{"path":"project.md","description":"Project-specific guidance","always":true,"paths":[]}]}'
+  Set-Content -Encoding utf8 (Join-Path $published '.workflow\mcp.json') '{"schemaVersion":1,"servers":{"project.api":{"transport":"http","url":"https://example.invalid/mcp"}}}'
   Set-Content -Encoding utf8 (Join-Path $published '.agents\rules\.workflow-managed.json') '{"files":[]}'
-  Set-Content -Encoding utf8 (Join-Path $published 'scripts\init.ps1') 'Install-Workflow'
-  Set-Content -Encoding utf8 (Join-Path $published 'scripts\doctor.ps1') 'Invoke-WorkflowDoctor'
-  Set-Content -Encoding utf8 (Join-Path $published 'scripts\lib\WorkflowDeploy.psm1') 'WorkflowVersion'
+  Set-Content -Encoding utf8 (Join-Path $published 'scripts\init.ps1') 'project wrapper calls Install-Workflow but is not the Workflow deployment source'
+  Set-Content -Encoding utf8 (Join-Path $published 'scripts\doctor.ps1') 'Validate a platform-neutral Workflow install; Invoke-WorkflowDoctor'
+  Set-Content -Encoding utf8 (Join-Path $published 'scripts\lib\WorkflowDeploy.psm1') 'WorkflowDeploy.psm1 WorkflowVersion Install-Workflow'
   Publish-WorkflowCodexArtifact -SourceRoot $repoRoot -TargetRoot $published
   Assert-True (Test-Path (Join-Path $published '.workflow')) "publication preserves downstream workflow project data"
   Assert-True (-not(Test-Path (Join-Path $published '.workflow\pack'))) "publication removes source-only workflow pack"
@@ -360,12 +371,17 @@ try {
   Assert-True (Test-Path (Join-Path $published '.workflow\schemas\workflow-contract\schema.json')) "publication includes workflow artifact contract"
   Assert-True (-not(Test-Path (Join-Path $published 'openspec'))) "publication removes legacy OpenSpec project data root"
   Assert-True (-not(Test-Path (Join-Path $published '.agents\skills\openspec-workflow'))) "publication removes legacy OpenSpec skill"
-  Assert-True (-not(Test-Path (Join-Path $published '.agents\rules\.workflow-managed.json'))) "publication removes empty generated rule index"
-  Assert-True (-not(Test-Path (Join-Path $published 'scripts\init.ps1'))) "publication removes deployment init source"
+  Assert-True (Test-Path (Join-Path $published '.agents\rules\.workflow-managed.json')) "publication indexes generated project rules"
+  Assert-True (Test-Path (Join-Path $published 'scripts\init.ps1')) "publication preserves a project script with only a loose workflow marker"
   Assert-True (-not(Test-Path (Join-Path $published 'scripts\doctor.ps1'))) "publication removes deployment doctor source"
   Assert-True (-not(Test-Path (Join-Path $published 'scripts\lib\WorkflowDeploy.psm1'))) "publication removes deployment module source"
   Assert-True (Test-Path (Join-Path $published '.agents\rules\private.md')) "publication preserves private rules"
   Assert-True (Test-Path (Join-Path $published '.agents\skills\private-skill\SKILL.md')) "publication preserves unrelated skills"
+  Assert-True (Test-Path (Join-Path $published '.workflow\rules\project.md')) "publication preserves project-owned neutral rule source"
+  Assert-True (Test-Path (Join-Path $published '.workflow\mcp.json')) "publication preserves project-owned neutral MCP source"
+  Assert-True ((Get-Content -Raw (Join-Path $published '.agents\rules\project.md')) -match 'Preserve project-specific guidance') "publication compiles project-owned Codex rule"
+  Assert-True ((Get-Content -Raw (Join-Path $published 'AGENTS.md')) -match 'Project-specific guidance') "publication routes project-owned rule in AGENTS"
+  Assert-True ((Get-Content -Raw (Join-Path $published '.codex\config.toml')) -match 'project\.api') "publication compiles project-owned MCP configuration"
   Assert-True (Test-Path (Join-Path $published '.agents\skills\workflow\artifact.json')) "publication includes artifact metadata"
   $publishedCli=Join-Path $published '.agents\skills\workflow\bin\workflow.ps1'
   Assert-True (Test-Path $publishedCli) "publication includes repository-owned CLI"
@@ -416,7 +432,7 @@ try {
 
     # Delta synchronization supports all operations and commits only a validated result.
     $multiMain=Join-Path $published '.workflow\specs\multi-cap';New-Item -ItemType Directory -Force -Path $multiMain|Out-Null
-    Set-Content -Encoding utf8 (Join-Path $multiMain 'spec.md') "# multi-cap Specification`n`n## Purpose`nTest delta operations.`n`n### Requirement: Alpha`nThe system SHALL keep alpha.`n`n#### Scenario: Alpha`n- **WHEN** alpha runs`n- **THEN** alpha succeeds`n`n### Requirement: Beta`nThe system SHALL keep beta.`n`n#### Scenario: Beta`n- **WHEN** beta runs`n- **THEN** beta succeeds`n"
+    Set-Content -Encoding utf8 (Join-Path $multiMain 'spec.md') "# multi-cap Specification`n`n## Purpose`nTest delta operations.`n`n### Requirement: Alpha`nThe system SHALL keep alpha.`n`n#### Scenario: Alpha`n- **WHEN** alpha runs`n- **THEN** alpha succeeds`n`n### Requirement: Beta`nThe system SHALL keep beta.`n`n#### Scenario: Beta`n- **WHEN** beta runs`n- **THEN** beta succeeds`n`n### Requirement: Gamma`nThe system SHALL keep gamma.`n`n#### Scenario: Gamma`n- **WHEN** gamma runs`n- **THEN** gamma succeeds`n"
     Set-Content -Encoding utf8 (Join-Path $multiMain 'design.md') "# multi-cap Design`n`n## Context`nAccepted baseline.`n"
     (& $publishedCli new multi-delta --json -ProjectRoot $published) | Out-Null
     $multiRoot=Join-Path $published '.workflow\changes\multi-delta'
@@ -424,13 +440,36 @@ try {
     Set-Content -Encoding utf8 (Join-Path $multiRoot 'design.md') "# Design`n`n## Context`nDelta operations.`n`n## Goals / Non-Goals`nVerify merge.`n`n## Decisions`nUse one delta.`n`n## Risks / Trade-offs`nNone.`n"
     Set-Content -Encoding utf8 (Join-Path $multiRoot 'tasks.md') "# Tasks`n`n- [x] 1.1 Exercise delta operations.`n"
     $multiDelta=Join-Path $multiRoot 'specs\multi-cap';New-Item -ItemType Directory -Force -Path $multiDelta|Out-Null
-    Set-Content -Encoding utf8 (Join-Path $multiDelta 'spec.md') "# multi-cap Delta`n`n## ADDED Requirements`n`n### Requirement: Gamma`nThe system SHALL add gamma.`n`n#### Scenario: Gamma`n- **WHEN** gamma runs`n- **THEN** gamma succeeds`n`n## MODIFIED Requirements`n`n### Requirement: Alpha`nThe system SHALL update alpha.`n`n#### Scenario: Updated alpha`n- **WHEN** alpha runs`n- **THEN** updated alpha succeeds`n`n## REMOVED Requirements`n`n### Requirement: Beta`n`n## RENAMED Requirements`n`nFROM: Gamma`nTO: Delta`n"
+    Set-Content -Encoding utf8 (Join-Path $multiDelta 'spec.md') "# multi-cap Delta`n`n## ADDED Requirements`n`n### Requirement: Epsilon`nThe system SHALL add epsilon.`n`n#### Scenario: Epsilon`n- **WHEN** epsilon runs`n- **THEN** epsilon succeeds`n`n## MODIFIED Requirements`n`n### Requirement: Alpha`nThe system SHALL update alpha.`n`n#### Scenario: Updated alpha`n- **WHEN** alpha runs`n- **THEN** updated alpha succeeds`n`n## REMOVED Requirements`n`n### Requirement: Beta`n`n## RENAMED Requirements`n`nFROM: Gamma`nTO: Delta`n"
     Set-Content -Encoding utf8 (Join-Path $multiDelta 'design.md') "# multi-cap Design`n`n## Context`nMerged design.`n"
     (& $publishedCli sync --change multi-delta --json -ProjectRoot $published) | Out-Null
     $multiMerged=Get-Content -Raw (Join-Path $multiMain 'spec.md')
     Assert-True ($multiMerged -match 'Requirement: Alpha' -and $multiMerged -match 'update alpha') "sync applies MODIFIED requirements"
     Assert-True ($multiMerged -notmatch 'Requirement: Beta') "sync applies REMOVED requirements"
-    Assert-True ($multiMerged -match 'Requirement: Delta' -and $multiMerged -notmatch 'Requirement: Gamma') "sync applies ADDED and RENAMED requirements"
+    Assert-True ($multiMerged -match 'Requirement: Delta' -and $multiMerged -match 'Requirement: Epsilon' -and $multiMerged -notmatch 'Requirement: Gamma') "sync applies ADDED and RENAMED requirements"
+    (& $publishedCli sync --change multi-delta --json -ProjectRoot $published) | Out-Null
+    Assert-True ((Get-Content -Raw (Join-Path $multiMain 'spec.md')) -eq $multiMerged) "sync replay preserves equivalent accepted content"
+
+    # Rename collision must fail without altering accepted content.
+    (& $publishedCli new rename-collision --json -ProjectRoot $published) | Out-Null
+    $renameRoot=Join-Path $published '.workflow\changes\rename-collision'
+    Set-Content -Encoding utf8 (Join-Path $renameRoot 'proposal.md') "# Proposal`n`n## Why`nCollision coverage.`n`n## What Changes`nReject ambiguous rename.`n`n## Capabilities`n`n### New Capabilities`nNone.`n`n### Modified Capabilities`n- multi-cap: reject collision.`n`n## Impact`nTest.`n`n## Non-goals`nProduction.`n"
+    Set-Content -Encoding utf8 (Join-Path $renameRoot 'design.md') "# Design`n`n## Context`nRename collision.`n`n## Goals / Non-Goals`nReject ambiguity.`n`n## Decisions`nValidate first.`n`n## Risks / Trade-offs`nNone.`n"
+    Set-Content -Encoding utf8 (Join-Path $renameRoot 'tasks.md') "# Tasks`n`n- [x] 1.1 Reject rename collision.`n"
+    $renameDelta=Join-Path $renameRoot 'specs\multi-cap';New-Item -ItemType Directory -Force -Path $renameDelta|Out-Null
+    Set-Content -Encoding utf8 (Join-Path $renameDelta 'spec.md') "# multi-cap Delta`n`n## RENAMED Requirements`n`nFROM: Alpha`nTO: Delta`n"
+    Set-Content -Encoding utf8 (Join-Path $renameDelta 'design.md') "# multi-cap Design`n`n## Context`nCollision must fail.`n"
+    $beforeRenameCollision=Get-Content -Raw (Join-Path $multiMain 'spec.md')
+    $null=(& $publishedCli sync --change rename-collision --json -ProjectRoot $published 2>&1 | Out-String)
+    Assert-True ($LASTEXITCODE -ne 0) "sync rejects a rename target that already exists"
+    Assert-True ((Get-Content -Raw (Join-Path $multiMain 'spec.md')) -eq $beforeRenameCollision) "rename collision leaves accepted spec unchanged"
+
+    $duplicateMain=Join-Path $published '.workflow\specs\duplicate-cap';New-Item -ItemType Directory -Force -Path $duplicateMain|Out-Null
+    Set-Content -Encoding utf8 (Join-Path $duplicateMain 'spec.md') "# duplicate-cap Specification`n`n## Purpose`nDuplicate validation.`n`n### Requirement: Same name`nThe system SHALL do one thing.`n`n#### Scenario: One`n- **WHEN** one runs`n- **THEN** one succeeds`n`n### Requirement: Same name`nThe system SHALL do another thing.`n`n#### Scenario: Two`n- **WHEN** two runs`n- **THEN** two succeeds`n"
+    Set-Content -Encoding utf8 (Join-Path $duplicateMain 'design.md') "# duplicate-cap Design`n`n## Context`nInvalid duplicate fixture.`n"
+    $duplicateDoctor=((& $publishedCli doctor --json -ProjectRoot $published)|Out-String|ConvertFrom-Json)
+    Assert-True ($duplicateDoctor.valid -eq $false -and (($duplicateDoctor.errors -join "`n") -match 'duplicate requirement name')) "local Doctor rejects duplicate accepted requirement names"
+    Remove-Item -LiteralPath $duplicateMain -Recurse -Force
 
     # Doctor must detect drift in a file covered by the local artifact manifest.
     $manifestedPrompt=Join-Path $published '.agents\skills\workflow\references\prompts\apply.md'
@@ -440,11 +479,26 @@ try {
     Assert-True ($driftedLocalDoctor.valid -eq $false) "published local CLI doctor detects manifested artifact drift"
     Copy-Item -LiteralPath $manifestedBackup -Destination $manifestedPrompt -Force
 
+    $extraArtifactFile=Join-Path $published '.agents\skills\workflow\private-extra.txt';Set-Content -Encoding utf8 $extraArtifactFile 'not in manifest'
+    $extraLocalDoctor=((& $publishedCli doctor --json -ProjectRoot $published)|Out-String|ConvertFrom-Json)
+    $extraArtifactDoctor=Invoke-WorkflowArtifactDoctor -ProjectRoot $published -SourceRoot $repoRoot
+    Assert-True ($extraLocalDoctor.valid -eq $false -and (($extraLocalDoctor.errors -join "`n") -match 'unmanifested')) "published local Doctor rejects an unmanifested runtime file"
+    Assert-True ($extraArtifactDoctor.ExitCode -ne 0 -and (($extraArtifactDoctor.Errors -join "`n") -match 'unmanifested')) "Artifact Doctor rejects an unmanifested runtime file"
+    Remove-Item -LiteralPath $extraArtifactFile -Force
+
+    $selectedConfig=Join-Path $published '.workflow\config.json';$selectedConfigBackup=Join-Path $tmp 'selected-config.backup';Copy-Item -LiteralPath $selectedConfig -Destination $selectedConfigBackup
+    Set-Content -Encoding utf8 $selectedConfig '{"schema":"missing-schema","rules":{}}'
+    $missingSchemaLocal=((& $publishedCli doctor --json -ProjectRoot $published)|Out-String|ConvertFrom-Json)
+    $missingSchemaArtifact=Invoke-WorkflowArtifactDoctor -ProjectRoot $published -SourceRoot $repoRoot
+    Assert-True ($missingSchemaLocal.valid -eq $false -and (($missingSchemaLocal.errors -join "`n") -match 'missing workflow schema')) "published local Doctor rejects the missing selected schema"
+    Assert-True ($missingSchemaArtifact.ExitCode -ne 0 -and (($missingSchemaArtifact.Errors -join "`n") -match 'missing workflow schema')) "Artifact Doctor rejects the missing selected schema"
+    Copy-Item -LiteralPath $selectedConfigBackup -Destination $selectedConfig -Force
+
     # `new` must use the configured schema rather than a built-in workflow-contract path.
     $custom=Join-Path $tmp 'custom-schema-project';$customSchema=Join-Path $custom '.workflow\schemas\brief-flow';New-Item -ItemType Directory -Force -Path (Join-Path $customSchema 'templates')|Out-Null
-    Set-Content -Encoding utf8 (Join-Path $custom '.workflow\config.workflow.yaml') "schema: brief-flow`n"
-    Set-Content -Encoding utf8 (Join-Path $custom '.workflow\config.yaml') "schema: brief-flow`n"
-    Set-Content -Encoding utf8 (Join-Path $customSchema 'schema.json') '{"name":"brief-flow","version":1,"artifacts":[{"id":"brief","path":"drafts/brief.md","required":true,"requires":[],"template":"templates/brief.md","instruction":"Write a brief."}]}'
+    Set-Content -Encoding utf8 (Join-Path $custom '.workflow\config.workflow.json') '{"schema":"brief-flow","rules":{}}'
+    Set-Content -Encoding utf8 (Join-Path $custom '.workflow\config.json') '{"schema":"brief-flow","rules":{}}'
+    Set-Content -Encoding utf8 (Join-Path $customSchema 'schema.json') '{"name":"brief-flow","version":1,"artifacts":[{"id":"brief","kind":"document","path":"drafts/brief.md","required":true,"requires":[],"template":"templates/brief.md","instruction":"Write a brief."}]}'
     Set-Content -Encoding utf8 (Join-Path $customSchema 'templates\brief.md') "## Intent`n`n<!-- Explain intent -->`n"
     $customNew=((& $publishedCli new custom-change --json -ProjectRoot $custom) | Out-String | ConvertFrom-Json)
     Assert-True ($customNew.schema -eq 'brief-flow') "new resolves the configured custom schema"

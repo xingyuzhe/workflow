@@ -1,11 +1,10 @@
 <#
 .SYNOPSIS
-  Validate a platform-neutral Workflow install. Use -Fix for explicit repair.
+  Read-only validation of a full platform-neutral Workflow install.
 #>
 param(
   [string]$ProjectRoot = (Get-Location).Path,
-  [ValidateSet('cursor','codex')][string[]]$Clients = @(),
-  [switch]$Fix
+  [ValidateSet('cursor','codex')][string[]]$Clients = @()
 )
 
 $ErrorActionPreference = 'Stop'
@@ -13,9 +12,6 @@ $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 Import-Module (Join-Path $scriptDir 'lib/WorkflowDeploy.psm1') -Force
 
 $ProjectRoot = Resolve-WorkflowPath -Path $ProjectRoot
-if ($Fix) {
-  Repair-WorkflowInstall -ProjectRoot $ProjectRoot -Clients $Clients
-}
 $result = Invoke-WorkflowDoctor -ProjectRoot $ProjectRoot -Clients $Clients
 if ($result.ExitCode -eq 0) {
   Write-Host "Doctor OK: $ProjectRoot" -ForegroundColor Green

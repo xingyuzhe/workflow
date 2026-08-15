@@ -19,7 +19,7 @@ param(
 
 $ErrorActionPreference = 'Stop'
 if (-not $Yes) {
-  Write-Error "Refusing to run without -Yes (destructive: purges workflow skills, overwrites config.workflow.yaml / workflow commands; never overwrites config.project.yaml)."
+  Write-Error "Refusing to run without -Yes (destructive: replaces exact workflow-owned skills, config.workflow.json, and workflow commands; never overwrites config.project.json)."
   exit 2
 }
 
