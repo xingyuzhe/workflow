@@ -18,4 +18,6 @@
 
 `.cursor/`、`.agents/` 和 `.codex/` 中 workflow-owned 文件是客户端适配产物，不是新的事实来源。例外是下游发布后的 `.agents/skills/workflow`：它是唯一运行时分发单元，但下游 change/spec/config 仍以 `.workflow` 项目数据为权威。
 
+`.workflow/.mutation.lock` 与 `.workflow/.transactions/` 只保存短期并发控制、回滚与中断恢复状态，不是行为或交付事实来源。`doctor` 只读报告其残留；后续 `sync` 或 `archive` 按 journal phase 恢复。
+
 同一段结构或行为定义只保留在其权威 artifact 中，其余位置引用它。

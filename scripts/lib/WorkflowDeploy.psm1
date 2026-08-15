@@ -1,6 +1,6 @@
 # WorkflowDeploy.psm1 — platform-neutral workflow deployment
 
-$script:WorkflowVersion = '6.0.0'
+$script:WorkflowVersion = '6.1.0'
 $script:WorkflowAgentsStart = '<!-- BEGIN WORKFLOW MANAGED -->'
 $script:WorkflowAgentsEnd = '<!-- END WORKFLOW MANAGED -->'
 $script:WorkflowCodexConfigStart = '# BEGIN WORKFLOW MANAGED MCP'

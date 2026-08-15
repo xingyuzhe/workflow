@@ -5,3 +5,5 @@
 .tmp-smoke-deploy/
 
 # Local workflow phase state
+.workflow/.mutation.lock
+.workflow/.transactions/

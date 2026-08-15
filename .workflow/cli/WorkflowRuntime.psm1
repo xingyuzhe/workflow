@@ -37,6 +37,298 @@ function Assert-WorkflowObjectProperties {
   foreach($property in $Object.PSObject.Properties.Name){if($property -notin $Allowed){throw "$Context contains unsupported field '$property'"}}
 }
 
+function Write-WorkflowDurableText {
+  param([Parameter(Mandatory)][string]$Path,[Parameter(Mandatory)][string]$Text)
+  $parent=Split-Path -Parent $Path
+  if(-not(Test-Path -LiteralPath $parent -PathType Container)){New-Item -ItemType Directory -Force -Path $parent|Out-Null}
+  $temporary=Join-Path $parent ('.workflow-write-'+[guid]::NewGuid().ToString('N')+'.tmp')
+  $backup=Join-Path $parent ('.workflow-write-'+[guid]::NewGuid().ToString('N')+'.bak')
+  try{
+    $bytes=([Text.UTF8Encoding]::new($false)).GetBytes($Text)
+    $stream=[IO.FileStream]::new($temporary,[IO.FileMode]::CreateNew,[IO.FileAccess]::Write,[IO.FileShare]::None,4096,[IO.FileOptions]::WriteThrough)
+    try{$stream.Write($bytes,0,$bytes.Length);$stream.Flush($true)}finally{$stream.Dispose()}
+    if(Test-Path -LiteralPath $Path -PathType Leaf){[IO.File]::Replace($temporary,$Path,$backup);Remove-Item -LiteralPath $backup -Force}else{[IO.File]::Move($temporary,$Path)}
+  }finally{
+    if(Test-Path -LiteralPath $temporary -PathType Leaf){Remove-Item -LiteralPath $temporary -Force}
+    if(Test-Path -LiteralPath $backup -PathType Leaf){Remove-Item -LiteralPath $backup -Force}
+  }
+}
+
+function Assert-WorkflowNoReparsePath {
+  param([Parameter(Mandatory)][string]$Root,[Parameter(Mandatory)][string]$Path,[Parameter(Mandatory)][string]$Context)
+  $rootFull=[IO.Path]::GetFullPath($Root).TrimEnd([char[]]@('\','/'))
+  $pathFull=[IO.Path]::GetFullPath($Path)
+  $prefix=$rootFull+[IO.Path]::DirectorySeparatorChar
+  if(-not $pathFull.StartsWith($prefix,[StringComparison]::OrdinalIgnoreCase)){throw "$Context escapes its root: $Path"}
+  $current=$rootFull
+  foreach($part in $pathFull.Substring($prefix.Length).Split([char[]]@('\','/'),[StringSplitOptions]::RemoveEmptyEntries)){
+    $current=Join-Path $current $part
+    if(-not(Test-Path -LiteralPath $current)){break}
+    $item=Get-Item -LiteralPath $current -Force
+    if(($item.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0){throw "$Context contains a reparse point: $current"}
+  }
+}
+
+function Copy-WorkflowPath {
+  param([Parameter(Mandatory)][string]$Source,[Parameter(Mandatory)][string]$Destination)
+  $item=Get-Item -LiteralPath $Source -Force -ErrorAction Stop
+  if(($item.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0){throw "transaction path contains a reparse point: $Source"}
+  if($item.PSIsContainer){
+    if(Test-Path -LiteralPath $Destination){throw "transaction copy destination already exists: $Destination"}
+    New-Item -ItemType Directory -Path $Destination|Out-Null
+    foreach($child in @(Get-ChildItem -LiteralPath $Source -Force)){Copy-WorkflowPath -Source $child.FullName -Destination (Join-Path $Destination $child.Name)}
+  }else{
+    $parent=Split-Path -Parent $Destination;if(-not(Test-Path -LiteralPath $parent -PathType Container)){New-Item -ItemType Directory -Force -Path $parent|Out-Null}
+    $input=[IO.FileStream]::new($Source,[IO.FileMode]::Open,[IO.FileAccess]::Read,[IO.FileShare]::Read)
+    try{
+      $output=[IO.FileStream]::new($Destination,[IO.FileMode]::CreateNew,[IO.FileAccess]::Write,[IO.FileShare]::None,4096,[IO.FileOptions]::WriteThrough)
+      try{$input.CopyTo($output);$output.Flush($true)}finally{$output.Dispose()}
+    }finally{$input.Dispose()}
+  }
+}
+
+function Remove-WorkflowPath {
+  param([Parameter(Mandatory)][string]$Path)
+  if(-not(Test-Path -LiteralPath $Path)){return}
+  $item=Get-Item -LiteralPath $Path -Force -ErrorAction Stop
+  if(($item.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0){throw "refusing to remove reparse point: $Path"}
+  if($item.PSIsContainer){foreach($child in @(Get-ChildItem -LiteralPath $Path -Force)){Remove-WorkflowPath $child.FullName};Remove-Item -LiteralPath $Path -Force}
+  else{Remove-Item -LiteralPath $Path -Force}
+}
+
+function Resolve-WorkflowTransactionTarget {
+  param([Parameter(Mandatory)][string]$Root,[Parameter(Mandatory)][string]$Relative,[Parameter(Mandatory)][string]$Context)
+  if(-not $Relative -or [IO.Path]::IsPathRooted($Relative)){throw "$Context has an unsafe target: $Relative"}
+  $portable=$Relative.Replace('\','/').Trim('/')
+  if(-not $portable -or $portable -match '[:*?"<>|]' -or $portable -match '(^|/)\.\.?(/|$)' -or $portable -match '(^|/)(?:\.workflow/\.transactions|\.workflow/\.mutation\.lock)(?:/|$)'){throw "$Context has an unsafe target: $Relative"}
+  $rootFull=[IO.Path]::GetFullPath($Root).TrimEnd([char[]]@('\','/'))
+  $full=[IO.Path]::GetFullPath((Join-Path $rootFull $portable.Replace('/',[IO.Path]::DirectorySeparatorChar)))
+  if(-not $full.StartsWith($rootFull+[IO.Path]::DirectorySeparatorChar,[StringComparison]::OrdinalIgnoreCase)){throw "$Context target escapes repository: $Relative"}
+  Assert-WorkflowNoReparsePath -Root $rootFull -Path $full -Context $Context
+  return [pscustomobject]@{Relative=$portable;Full=$full}
+}
+
+function Get-WorkflowTransactionRelativeTarget {
+  param([Parameter(Mandatory)][string]$Root,[Parameter(Mandatory)][string]$Path)
+  $rootFull=[IO.Path]::GetFullPath($Root).TrimEnd([char[]]@('\','/'));$full=[IO.Path]::GetFullPath($Path)
+  $prefix=$rootFull+[IO.Path]::DirectorySeparatorChar
+  if(-not $full.StartsWith($prefix,[StringComparison]::OrdinalIgnoreCase)){throw "transaction target is outside repository: $Path"}
+  return $full.Substring($prefix.Length).Replace('\','/')
+}
+
+function Invoke-WorkflowTestFailpoint {
+  param([Parameter(Mandatory)][string]$Name)
+  if($env:WORKFLOW_ENABLE_TEST_HOOKS -ne '1' -or $env:WORKFLOW_TEST_FAILPOINT -ne $Name){return}
+  if($Name.StartsWith('crash-')){[Environment]::Exit(86)}
+  throw "workflow test failpoint: $Name"
+}
+
+function Enter-WorkflowMutationLock {
+  param([Parameter(Mandatory)][string]$Root)
+  $path=Join-Path $Root '.workflow/.mutation.lock';$parent=Split-Path -Parent $path
+  if(-not(Test-Path -LiteralPath $parent -PathType Container)){throw "missing workflow data root: $parent"}
+  $stream=$null
+  for($attempt=0;$attempt -lt 3 -and $null -eq $stream;$attempt++){
+    try{$stream=[IO.FileStream]::new($path,[IO.FileMode]::CreateNew,[IO.FileAccess]::ReadWrite,[IO.FileShare]::Delete,4096,[IO.FileOptions]::WriteThrough)}
+    catch [IO.IOException]{
+      if(Test-Path -LiteralPath $path){$lockItem=Get-Item -LiteralPath $path -Force;if(($lockItem.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0){throw "invalid lifecycle mutation lock reparse point: $path"}}
+      try{$stream=[IO.FileStream]::new($path,[IO.FileMode]::Open,[IO.FileAccess]::ReadWrite,[IO.FileShare]::Delete,4096,[IO.FileOptions]::WriteThrough)}
+      catch [IO.FileNotFoundException]{continue}
+      catch [IO.IOException]{throw "lifecycle mutation lock is owned by another writer: $path"}
+    }
+  }
+  if($null -eq $stream){throw "unable to acquire lifecycle mutation lock: $path"}
+  try{
+    $token=([ordered]@{id=[guid]::NewGuid().ToString('N');pid=$PID;acquiredAt=[DateTimeOffset]::UtcNow.ToString('o')}|ConvertTo-Json -Compress)+"`n"
+    $bytes=([Text.UTF8Encoding]::new($false)).GetBytes($token);$stream.SetLength(0);$stream.Write($bytes,0,$bytes.Length);$stream.Flush($true)
+    return [pscustomobject]@{Path=$path;Stream=$stream}
+  }catch{$stream.Dispose();throw}
+}
+
+function Exit-WorkflowMutationLock {
+  param([Parameter(Mandatory)]$Lock)
+  try{if(Test-Path -LiteralPath $Lock.Path -PathType Leaf){[IO.File]::Delete($Lock.Path)}}finally{$Lock.Stream.Dispose()}
+}
+
+function Read-WorkflowTransaction {
+  param([Parameter(Mandatory)][string]$Root,[Parameter(Mandatory)][string]$TransactionPath)
+  $directory=Get-Item -LiteralPath $TransactionPath -Force -ErrorAction Stop
+  if(-not $directory.PSIsContainer -or ($directory.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0){throw "invalid lifecycle transaction directory: $TransactionPath"}
+  $id=$directory.Name;if($id -notmatch '^[a-f0-9]{32}$'){throw "invalid lifecycle transaction id: $id"}
+  $journalPath=Join-Path $TransactionPath 'journal.json';if(-not(Test-Path -LiteralPath $journalPath -PathType Leaf)){throw "missing lifecycle transaction journal: $journalPath"}
+  $journalItem=Get-Item -LiteralPath $journalPath -Force;if(($journalItem.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0){throw "invalid lifecycle transaction journal reparse point: $journalPath"}
+  try{$journal=Read-WorkflowText $journalPath|ConvertFrom-Json}catch{throw "invalid lifecycle transaction journal: $journalPath - $($_.Exception.Message)"}
+  Assert-WorkflowObjectProperties $journal @('schemaVersion','id','phase','operation','createdAt','targets') "lifecycle transaction journal: $journalPath"
+  if($null -eq $journal.schemaVersion -or $journal.schemaVersion.GetType().FullName -notmatch '^System\.(?:S?Byte|U?Int(?:16|32|64))$' -or [int64]$journal.schemaVersion -ne 1){throw "lifecycle transaction schemaVersion must be the integer 1: $journalPath"}
+  if($journal.id -isnot [string] -or $journal.id -ne $id){throw "lifecycle transaction id mismatch: $journalPath"}
+  if($journal.phase -isnot [string] -or $journal.phase -notin @('prepared','committing','committed')){throw "invalid lifecycle transaction phase: $journalPath"}
+  if($journal.operation -isnot [string] -or $journal.operation -notin @('sync','archive')){throw "invalid lifecycle transaction operation: $journalPath"}
+  $created=[DateTimeOffset]::MinValue
+  if($journal.createdAt -is [datetime]){$created=[DateTimeOffset]$journal.createdAt}
+  elseif($journal.createdAt -is [DateTimeOffset]){$created=$journal.createdAt}
+  elseif($journal.createdAt -isnot [string] -or -not [DateTimeOffset]::TryParse($journal.createdAt,[ref]$created)){throw "invalid lifecycle transaction createdAt: $journalPath"}
+  if($null -eq $journal.targets -or $journal.targets -is [string] -or $journal.targets -isnot [array] -or @($journal.targets).Count -eq 0){throw "lifecycle transaction targets must be a non-empty array: $journalPath"}
+  $targets=New-Object System.Collections.Generic.List[object];$seen=New-Object System.Collections.Generic.List[string]
+  for($index=0;$index -lt @($journal.targets).Count;$index++){
+    $target=$journal.targets[$index];Assert-WorkflowObjectProperties $target @('target','operation','existed','original','prepared','role') "lifecycle transaction target ${index}: $journalPath"
+    if($target.target -isnot [string]){throw "lifecycle transaction target path must be a string: $journalPath"}
+    $resolved=Resolve-WorkflowTransactionTarget -Root $Root -Relative $target.target -Context "lifecycle transaction target ${index}"
+    foreach($other in $seen){if($resolved.Relative -eq $other -or $resolved.Relative.StartsWith($other+'/',[StringComparison]::OrdinalIgnoreCase) -or $other.StartsWith($resolved.Relative+'/',[StringComparison]::OrdinalIgnoreCase)){throw "overlapping lifecycle transaction targets: $other and $($resolved.Relative)"}}
+    $seen.Add($resolved.Relative)
+    if($target.operation -isnot [string] -or $target.operation -notin @('replace','delete')){throw "invalid lifecycle transaction target operation: $journalPath"}
+    if($target.existed -isnot [bool]){throw "lifecycle transaction target existed must be boolean: $journalPath"}
+    if($target.original -isnot [string] -or $target.prepared -isnot [string] -or $target.role -isnot [string] -or $target.role -notin @('capability','receipt','archive','active-change')){throw "invalid lifecycle transaction target metadata: $journalPath"}
+    $expectedOriginal=if($target.existed){"original/$index"}else{''};$expectedPrepared=if($target.operation -eq 'replace'){"prepared/$index"}else{''}
+    if($target.original -ne $expectedOriginal -or $target.prepared -ne $expectedPrepared){throw "invalid lifecycle transaction storage path: $journalPath target $index"}
+    $originalPath=if($target.original){Join-Path $TransactionPath $target.original}else{$null};$preparedPath=if($target.prepared){Join-Path $TransactionPath $target.prepared}else{$null}
+    if($originalPath){Assert-WorkflowNoReparsePath -Root $TransactionPath -Path $originalPath -Context "transaction original $index"}
+    if($preparedPath){Assert-WorkflowNoReparsePath -Root $TransactionPath -Path $preparedPath -Context "transaction prepared $index"}
+    $targets.Add([pscustomobject]@{Entry=$target;FullTarget=$resolved.Full;OriginalPath=$originalPath;PreparedPath=$preparedPath;Index=$index})
+  }
+  return [pscustomobject]@{Path=$TransactionPath;JournalPath=$journalPath;Journal=$journal;Targets=$targets.ToArray()}
+}
+
+function Assert-WorkflowTransactionCanRestore {
+  param([Parameter(Mandatory)][string]$Root,[Parameter(Mandatory)]$Transaction)
+  foreach($target in @($Transaction.Targets)){
+    Assert-WorkflowNoReparsePath -Root $Root -Path $target.FullTarget -Context 'transaction rollback target'
+    if($target.Entry.existed){if(-not(Test-Path -LiteralPath $target.OriginalPath)){throw "missing lifecycle transaction original: $($target.OriginalPath)"};Assert-WorkflowNoReparsePath -Root $Transaction.Path -Path $target.OriginalPath -Context 'transaction original'}
+  }
+}
+
+function Restore-WorkflowTransaction {
+  param([Parameter(Mandatory)][string]$Root,[Parameter(Mandatory)]$Transaction)
+  Assert-WorkflowTransactionCanRestore -Root $Root -Transaction $Transaction
+  foreach($target in @($Transaction.Targets|Sort-Object Index -Descending)){
+    Remove-WorkflowPath $target.FullTarget
+    if($target.Entry.existed){Copy-WorkflowPath -Source $target.OriginalPath -Destination $target.FullTarget}
+  }
+}
+
+function Remove-WorkflowTransaction {
+  param([Parameter(Mandatory)]$Transaction)
+  Remove-WorkflowPath $Transaction.Path
+}
+
+function Get-WorkflowIncompleteTransactions {
+  param([Parameter(Mandatory)][string]$Root)
+  $transactionsRoot=Join-Path $Root '.workflow/.transactions'
+  if(-not(Test-Path -LiteralPath $transactionsRoot)){return @()}
+  $rootItem=Get-Item -LiteralPath $transactionsRoot -Force
+  if(-not $rootItem.PSIsContainer -or ($rootItem.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0){throw "invalid lifecycle transactions root: $transactionsRoot"}
+  $transactions=New-Object System.Collections.Generic.List[object]
+  foreach($entry in @(Get-ChildItem -LiteralPath $transactionsRoot -Force|Sort-Object Name)){
+    if(-not $entry.PSIsContainer){throw "unexpected lifecycle transaction entry: $($entry.FullName)"}
+    $transaction=Read-WorkflowTransaction -Root $Root -TransactionPath $entry.FullName
+    if($transaction.Journal.phase -eq 'committing'){Assert-WorkflowTransactionCanRestore -Root $Root -Transaction $transaction}
+    $transactions.Add($transaction)
+  }
+  return $transactions.ToArray()
+}
+
+function Repair-WorkflowIncompleteTransactions {
+  param([Parameter(Mandatory)][string]$Root)
+  $transactions=@(Get-WorkflowIncompleteTransactions $Root)
+  foreach($transaction in $transactions){
+    if($transaction.Journal.phase -eq 'committing'){Restore-WorkflowTransaction -Root $Root -Transaction $transaction}
+    Remove-WorkflowTransaction $transaction
+  }
+}
+
+function Get-WorkflowTransactionDiagnosticErrors {
+  param([Parameter(Mandatory)][string]$Root)
+  $errors=New-Object System.Collections.Generic.List[string];$lockPath=Join-Path $Root '.workflow/.mutation.lock'
+  if(Test-Path -LiteralPath $lockPath){$errors.Add("lifecycle mutation lock residue: $lockPath")}
+  $transactionsRoot=Join-Path $Root '.workflow/.transactions'
+  if(Test-Path -LiteralPath $transactionsRoot){
+    try{
+      foreach($transaction in @(Get-WorkflowIncompleteTransactions $Root)){$errors.Add("incomplete lifecycle transaction: $($transaction.Journal.id) ($($transaction.Journal.phase))")}
+    }catch{$errors.Add($_.Exception.Message)}
+  }
+  return $errors.ToArray()
+}
+
+function New-WorkflowTransaction {
+  param([Parameter(Mandatory)][string]$Root,[Parameter(Mandatory)][ValidateSet('sync','archive')][string]$Operation,[Parameter(Mandatory)][object[]]$Items)
+  if($Items.Count -eq 0){throw 'lifecycle transaction requires at least one target'}
+  $id=[guid]::NewGuid().ToString('N');$transactionsRoot=Join-Path $Root '.workflow/.transactions';$path=Join-Path $transactionsRoot $id
+  New-Item -ItemType Directory -Force -Path $transactionsRoot|Out-Null;New-Item -ItemType Directory -Path $path|Out-Null
+  try{
+    $entries=New-Object System.Collections.Generic.List[object]
+    for($index=0;$index -lt $Items.Count;$index++){
+      $item=$Items[$index]
+      foreach($required in @('Target','Operation','Role')){if($item.PSObject.Properties.Name -notcontains $required){throw "transaction item missing $required"}}
+      if("$($item.Operation)" -notin @('replace','delete')){throw "invalid transaction item operation: $($item.Operation)"}
+      $relative=Get-WorkflowTransactionRelativeTarget -Root $Root -Path "$($item.Target)";$resolved=Resolve-WorkflowTransactionTarget -Root $Root -Relative $relative -Context "transaction item $index"
+      $existed=Test-Path -LiteralPath $resolved.Full;$original=if($existed){"original/$index"}else{''};$prepared=if("$($item.Operation)" -eq 'replace'){"prepared/$index"}else{''}
+      if($existed){Copy-WorkflowPath -Source $resolved.Full -Destination (Join-Path $path $original)}
+      if($prepared){
+        $hasText=$item.PSObject.Properties.Name -contains 'Text';$hasSource=$item.PSObject.Properties.Name -contains 'Source';$hasFiles=$item.PSObject.Properties.Name -contains 'Files';$kindCount=0
+        if($hasText){$kindCount++};if($hasSource){$kindCount++};if($hasFiles){$kindCount++}
+        if($kindCount -ne 1){throw "replace transaction item must provide exactly one of Text, Source, or Files: $relative"}
+        $preparedPath=Join-Path $path $prepared
+        if($hasText){if($item.Text -isnot [string]){throw "transaction item Text must be a string: $relative"};Write-WorkflowText -Path $preparedPath -Text $item.Text}
+        elseif($hasSource){if(-not(Test-Path -LiteralPath "$($item.Source)")){throw "transaction item source missing: $($item.Source)"};Copy-WorkflowPath -Source "$($item.Source)" -Destination $preparedPath}
+        else{
+          if($item.Files -is [string] -or $item.Files -isnot [array] -or @($item.Files).Count -eq 0){throw "transaction item Files must be a non-empty array: $relative"}
+          if($existed){$existing=Get-Item -LiteralPath $resolved.Full -Force;if(-not $existing.PSIsContainer){throw "transaction file set target is not a directory: $relative"};Copy-WorkflowPath -Source $resolved.Full -Destination $preparedPath}else{New-Item -ItemType Directory -Path $preparedPath|Out-Null}
+          $fileNames=@{}
+          foreach($file in @($item.Files)){
+            foreach($requiredFileProperty in @('Relative')){if($file.PSObject.Properties.Name -notcontains $requiredFileProperty){throw "transaction file item missing ${requiredFileProperty}: $relative"}}
+            $fileRelative="$($file.Relative)".Replace('\','/').Trim('/');if(-not $fileRelative -or [IO.Path]::IsPathRooted("$($file.Relative)") -or $fileRelative -match '[:*?"<>|]' -or $fileRelative -match '(^|/)\.\.?(/|$)'){throw "unsafe transaction file path: $($file.Relative)"}
+            if($fileNames.ContainsKey($fileRelative)){throw "duplicate transaction file path: $fileRelative"};$fileNames[$fileRelative]=$true
+            $fileTarget=[IO.Path]::GetFullPath((Join-Path $preparedPath $fileRelative.Replace('/',[IO.Path]::DirectorySeparatorChar)))
+            Assert-WorkflowNoReparsePath -Root $preparedPath -Path $fileTarget -Context 'transaction prepared file'
+            if(Test-Path -LiteralPath $fileTarget){Remove-WorkflowPath $fileTarget}
+            $fileHasText=$file.PSObject.Properties.Name -contains 'Text';$fileHasSource=$file.PSObject.Properties.Name -contains 'Source'
+            if($fileHasText -eq $fileHasSource){throw "transaction file must provide exactly one of Text or Source: $fileRelative"}
+            if($fileHasText){if($file.Text -isnot [string]){throw "transaction file Text must be a string: $fileRelative"};Write-WorkflowText -Path $fileTarget -Text $file.Text}
+            else{if(-not(Test-Path -LiteralPath "$($file.Source)")){throw "transaction file source missing: $($file.Source)"};Copy-WorkflowPath -Source "$($file.Source)" -Destination $fileTarget}
+          }
+        }
+      }
+      $entries.Add([ordered]@{target=$resolved.Relative;operation="$($item.Operation)";existed=[bool]$existed;original=$original;prepared=$prepared;role="$($item.Role)"})
+    }
+    $journal=[ordered]@{schemaVersion=1;id=$id;phase='prepared';operation=$Operation;createdAt=[DateTimeOffset]::UtcNow.ToString('o');targets=$entries.ToArray()}
+    Write-WorkflowDurableText -Path (Join-Path $path 'journal.json') -Text (ConvertTo-WorkflowJson $journal)
+    return Read-WorkflowTransaction -Root $Root -TransactionPath $path
+  }catch{if(Test-Path -LiteralPath $path){Remove-WorkflowPath $path};throw}
+}
+
+function Set-WorkflowTransactionPhase {
+  param([Parameter(Mandatory)]$Transaction,[Parameter(Mandatory)][ValidateSet('prepared','committing','committed')][string]$Phase)
+  $Transaction.Journal.phase=$Phase;Write-WorkflowDurableText -Path $Transaction.JournalPath -Text (ConvertTo-WorkflowJson $Transaction.Journal)
+}
+
+function Invoke-WorkflowTransaction {
+  param([Parameter(Mandatory)][string]$Root,[Parameter(Mandatory)]$Transaction)
+  foreach($target in @($Transaction.Targets)){
+    Assert-WorkflowNoReparsePath -Root $Root -Path $target.FullTarget -Context 'transaction commit target'
+    if($target.Entry.operation -eq 'replace' -and -not(Test-Path -LiteralPath $target.PreparedPath)){throw "missing lifecycle transaction prepared value: $($target.PreparedPath)"}
+  }
+  $isCommitting=$false
+  try{
+    Set-WorkflowTransactionPhase -Transaction $Transaction -Phase committing;$isCommitting=$true;$applied=0
+    foreach($target in @($Transaction.Targets)){
+      Invoke-WorkflowTestFailpoint "before-$($target.Entry.role)-target"
+      Remove-WorkflowPath $target.FullTarget
+      if($target.Entry.operation -eq 'replace'){Copy-WorkflowPath -Source $target.PreparedPath -Destination $target.FullTarget}
+      $applied++;Invoke-WorkflowTestFailpoint "after-$($target.Entry.role)-target"
+      if($applied -eq 1){Invoke-WorkflowTestFailpoint 'after-first-target';Invoke-WorkflowTestFailpoint 'crash-after-first-target'}
+    }
+    Set-WorkflowTransactionPhase -Transaction $Transaction -Phase committed;$isCommitting=$false
+    Invoke-WorkflowTestFailpoint 'crash-after-committed'
+    Remove-WorkflowTransaction $Transaction
+  }catch{
+    $failure=$_
+    if($isCommitting){
+      try{Restore-WorkflowTransaction -Root $Root -Transaction $Transaction;Remove-WorkflowTransaction $Transaction}
+      catch{throw "lifecycle transaction failed and rollback could not complete: $($failure.Exception.Message); rollback: $($_.Exception.Message)"}
+    }
+    throw $failure
+  }
+}
+
 function Get-WorkflowPortableContentHash {
   param([Parameter(Mandatory)][string]$Path)
   $bytes=[IO.File]::ReadAllBytes($Path)
@@ -328,14 +620,14 @@ function Get-WorkflowMergedDeltaSpecText {
   return (($parts -join "`n`n").TrimEnd()+"`n")
 }
 
-function Sync-WorkflowChange {
+function Get-WorkflowSyncPlan {
   param([Parameter(Mandatory)][string]$Root,[Parameter(Mandatory)][string]$Change)
   $validation=Test-WorkflowChange $Root $Change;if(-not $validation.Valid){throw ($validation.Errors -join "`n")}
   $receiptPath=Join-Path $validation.Path '.sync.json';$receiptEntries=@{}
   if(Test-Path -LiteralPath $receiptPath -PathType Leaf){
     try{$receipt=Read-WorkflowText $receiptPath|ConvertFrom-Json;Assert-WorkflowObjectProperties $receipt @('schemaVersion','capabilities') 'sync receipt';if($receipt.schemaVersion -ne 1){throw 'sync receipt schemaVersion must be 1'};if($null -eq $receipt.capabilities -or $receipt.capabilities -is [string] -or $receipt.capabilities -is [array] -or $receipt.capabilities -is [ValueType]){throw 'sync receipt capabilities must be an object'};foreach($property in $receipt.capabilities.PSObject.Properties){Assert-WorkflowObjectProperties $property.Value @('specSha256') "sync receipt capability '$($property.Name)'";if("$($property.Value.specSha256)" -notmatch '^[A-Fa-f0-9]{64}$'){throw "sync receipt contains invalid hash: $($property.Name)"};$receiptEntries[$property.Name]="$($property.Value.specSha256)"}}catch{throw "invalid sync receipt: $($_.Exception.Message)"}
   }
-  $schema=Get-WorkflowSchema $Root;$prepared=New-Object System.Collections.Generic.List[object];$capabilities=@{}
+  $schema=Get-WorkflowSchema $Root;$prepared=New-Object System.Collections.Generic.List[object];$items=New-Object System.Collections.Generic.List[object];$capabilities=@{}
   foreach($deltaArtifact in @($schema.Value.artifacts|Where-Object{$_.kind -eq 'capability-deltas'})){
     $changeSpecs=Join-Path $validation.Path "$($deltaArtifact.path)";$mainSpecs=Join-Path $Root "$($deltaArtifact.publishPath)"
     foreach($cap in @(Get-ChildItem -LiteralPath $changeSpecs -Directory -ErrorAction SilentlyContinue)){
@@ -347,11 +639,55 @@ function Sync-WorkflowChange {
       if($specErrors.Count){throw ($specErrors -join "`n")}
       if(-not(Test-Path -LiteralPath $designSource -PathType Leaf)){throw "missing capability companion: $designSource"}
       $prepared.Add([pscustomobject]@{Name=$cap.Name;Destination=$dest;SpecPath=$specPath;SpecText=$merged;DesignSource=$designSource})
+      $files=@(
+        [pscustomobject]@{Relative='spec.md';Text=$merged},
+        [pscustomobject]@{Relative='design.md';Source=$designSource}
+      )
+      $items.Add([pscustomobject]@{Target=$dest;Operation='replace';Role='capability';Files=$files})
     }
   }
-  foreach($item in $prepared){New-Item -ItemType Directory -Force -Path $item.Destination|Out-Null;Write-WorkflowText $item.SpecPath $item.SpecText;Copy-Item -LiteralPath $item.DesignSource -Destination (Join-Path $item.Destination 'design.md') -Force}
-  if($prepared.Count){$saved=[ordered]@{};foreach($item in $prepared){$saved[$item.Name]=[ordered]@{specSha256=(Get-WorkflowTextContentHash $item.SpecText)}};Write-WorkflowText $receiptPath (ConvertTo-WorkflowJson ([ordered]@{schemaVersion=1;capabilities=$saved}))}
-  return @($prepared.Name)
+  $receiptText=$null
+  if($prepared.Count){
+    $saved=[ordered]@{};foreach($item in $prepared){$saved[$item.Name]=[ordered]@{specSha256=(Get-WorkflowTextContentHash $item.SpecText)}}
+    $receiptText=ConvertTo-WorkflowJson ([ordered]@{schemaVersion=1;capabilities=$saved})
+    $items.Add([pscustomobject]@{Target=$receiptPath;Operation='replace';Role='receipt';Text=$receiptText})
+  }
+  return [pscustomobject]@{ChangeRoot=$validation.Path;Names=@($prepared.Name);Items=$items.ToArray();ReceiptPath=$receiptPath;ReceiptText=$receiptText}
+}
+
+function Sync-WorkflowChange {
+  param([Parameter(Mandatory)][string]$Root,[Parameter(Mandatory)][string]$Change)
+  $lock=Enter-WorkflowMutationLock $Root
+  try{
+    Repair-WorkflowIncompleteTransactions $Root
+    $plan=Get-WorkflowSyncPlan -Root $Root -Change $Change
+    if(@($plan.Items).Count){$transaction=New-WorkflowTransaction -Root $Root -Operation sync -Items @($plan.Items);Invoke-WorkflowTransaction -Root $Root -Transaction $transaction}
+    return @($plan.Names)
+  }finally{Exit-WorkflowMutationLock $lock}
+}
+
+function Archive-WorkflowChange {
+  param([Parameter(Mandatory)][string]$Root,[Parameter(Mandatory)][string]$Change)
+  $lock=Enter-WorkflowMutationLock $Root
+  try{
+    Repair-WorkflowIncompleteTransactions $Root
+    $validation=Test-WorkflowChange $Root $Change -RequireCompletedTasks;if(-not $validation.Valid){throw ($validation.Errors -join "`n")}
+    $archiveRoot=Join-Path $Root '.workflow/changes/archive';$archiveName="$(Get-Date -Format 'yyyy-MM-dd')-$Change";$destination=Join-Path $archiveRoot $archiveName
+    if(Test-Path -LiteralPath $destination){throw "archive already exists: $archiveName"}
+    $plan=Get-WorkflowSyncPlan -Root $Root -Change $Change
+    $temporary=Join-Path ([IO.Path]::GetTempPath()) ('workflow-archive-'+[guid]::NewGuid().ToString('N'))
+    try{
+      Copy-WorkflowPath -Source $validation.Path -Destination $temporary
+      if($null -ne $plan.ReceiptText){Write-WorkflowText -Path (Join-Path $temporary '.sync.json') -Text $plan.ReceiptText}
+      $items=New-Object System.Collections.Generic.List[object]
+      foreach($item in @($plan.Items|Where-Object{$_.Role -ne 'receipt'})){$items.Add($item)}
+      $items.Add([pscustomobject]@{Target=$destination;Operation='replace';Role='archive';Source=$temporary})
+      $items.Add([pscustomobject]@{Target=$validation.Path;Operation='delete';Role='active-change'})
+      $transaction=New-WorkflowTransaction -Root $Root -Operation archive -Items $items.ToArray()
+      Invoke-WorkflowTransaction -Root $Root -Transaction $transaction
+    }finally{if(Test-Path -LiteralPath $temporary){Remove-WorkflowPath $temporary}}
+    return [pscustomobject]@{change=$Change;archived=$true;archivedAs=$archiveName;path=$destination;updated=@($plan.Names)}
+  }finally{Exit-WorkflowMutationLock $lock}
 }
 
 function Get-WorkflowArtifactIntegrityErrors {
@@ -407,15 +743,13 @@ function Invoke-RepositoryWorkflow {
     'sync' { if(-not $change){throw 'sync requires --change'};$value=[pscustomobject]@{change=$change;updated=@(Sync-WorkflowChange $root $change)} }
     'archive' {
       if(-not $change){$positionals=@(Get-WorkflowPositionals $Arguments);if($positionals.Count){$change=$positionals[0]}};if(-not $change){throw 'archive requires a change name'}
-      $validation=Test-WorkflowChange $root $change -RequireCompletedTasks;if(-not $validation.Valid){throw ($validation.Errors -join "`n")}
-      $archiveRoot=Join-Path $root '.workflow/changes/archive';$archiveName="$(Get-Date -Format 'yyyy-MM-dd')-$change";$dest=Join-Path $archiveRoot $archiveName;if(Test-Path $dest){throw "archive already exists: $archiveName"}
-      $updated=@(Sync-WorkflowChange $root $change);New-Item -ItemType Directory -Force -Path $archiveRoot|Out-Null;Move-Item -LiteralPath $validation.Path -Destination $dest
-      $value=[pscustomobject]@{change=$change;archived=$true;archivedAs=$archiveName;path=$dest;updated=$updated}
+      $value=Archive-WorkflowChange $root $change
     }
     'doctor' {
       $errors=New-Object System.Collections.Generic.List[string];try{$null=Get-WorkflowSchema $root}catch{$errors.Add($_.Exception.Message)};foreach($e in @(Get-WorkflowPairErrors (Join-Path $root '.workflow/specs'))){$errors.Add($e)}
       foreach($file in @(Get-ChildItem -LiteralPath (Join-Path $root '.workflow/specs') -Filter 'spec.md' -Recurse -File -ErrorAction SilentlyContinue)){foreach($e in @(Test-WorkflowSpecText $file.FullName)){$errors.Add($e)}}
       foreach($e in @(Get-WorkflowArtifactIntegrityErrors $root)){$errors.Add($e)}
+      foreach($e in @(Get-WorkflowTransactionDiagnosticErrors $root)){$errors.Add($e)}
       $value=[pscustomobject]@{Valid=($errors.Count -eq 0);Errors=$errors.ToArray();Root=$root};if(-not $value.Valid -and -not $json){throw ($value.Errors -join "`n")}
     }
     'help' { return 'workflow commands: new, status, instructions, validate, sync, archive, doctor' }

@@ -2,6 +2,7 @@
 $ErrorActionPreference = 'Stop'
 $here = Split-Path -Parent $MyInvocation.MyCommand.Path
 $repoRoot = (Resolve-Path (Join-Path $here '..\..')).Path
+$testPowerShellPath = (Get-Process -Id $PID).Path
 Import-Module (Join-Path $here '..\lib\WorkflowDeploy.psm1') -Force
 
 $failed = 0
@@ -450,6 +451,121 @@ try {
     (& $publishedCli sync --change multi-delta --json -ProjectRoot $published) | Out-Null
     Assert-True ((Get-Content -Raw (Join-Path $multiMain 'spec.md')) -eq $multiMerged) "sync replay preserves equivalent accepted content"
 
+    # Lifecycle writes are all-or-nothing and reject a concurrent writer.
+    Set-Content -Encoding utf8 (Join-Path $multiMain 'project-notes.md') 'preserve capability-local project content'
+    $transactionDeltaText="# multi-cap Delta`n`n## MODIFIED Requirements`n`n### Requirement: Alpha`nThe system SHALL publish alpha transactionally.`n`n#### Scenario: Transactional alpha`n- **WHEN** alpha publication fails`n- **THEN** every lifecycle target is restored`n"
+    Set-Content -Encoding utf8 (Join-Path $multiDelta 'spec.md') $transactionDeltaText
+    $secondDelta=Join-Path $multiRoot 'specs\multi-cap-two';New-Item -ItemType Directory -Force -Path $secondDelta|Out-Null
+    Set-Content -Encoding utf8 (Join-Path $secondDelta 'spec.md') "# multi-cap-two Delta`n`n## ADDED Requirements`n`n### Requirement: Second capability`nThe system SHALL publish a second capability in the same transaction.`n`n#### Scenario: Publish second capability`n- **WHEN** multi-capability sync runs`n- **THEN** both capabilities commit together`n"
+    Set-Content -Encoding utf8 (Join-Path $secondDelta 'design.md') "# multi-cap-two Design`n`n## Context`nMulti-capability transaction coverage.`n"
+    $transactionBefore=Get-TreeFingerprint (Join-Path $published '.workflow\specs')
+    $receiptBefore=(Get-FileHash -Algorithm SHA256 -LiteralPath (Join-Path $multiRoot '.sync.json')).Hash
+    try {
+      $env:WORKFLOW_ENABLE_TEST_HOOKS='1'
+      $env:WORKFLOW_TEST_FAILPOINT='after-first-target'
+      $null=(& $publishedCli sync --change multi-delta --json -ProjectRoot $published 2>&1 | Out-String)
+      Assert-True ($LASTEXITCODE -ne 0) "multi-capability sync failpoint interrupts the transaction"
+    } finally {
+      Remove-Item Env:WORKFLOW_ENABLE_TEST_HOOKS -ErrorAction SilentlyContinue
+      Remove-Item Env:WORKFLOW_TEST_FAILPOINT -ErrorAction SilentlyContinue
+    }
+    Assert-True ((Get-TreeFingerprint (Join-Path $published '.workflow\specs')) -eq $transactionBefore) "caught sync failure restores every accepted capability byte-for-byte"
+    Assert-True ((Get-FileHash -Algorithm SHA256 -LiteralPath (Join-Path $multiRoot '.sync.json')).Hash -eq $receiptBefore) "caught sync failure restores the receipt byte-for-byte"
+    Assert-True (-not(Test-Path -LiteralPath (Join-Path $published '.workflow\.mutation.lock'))) "caught sync failure releases the lifecycle lock"
+    Assert-True (@(Get-ChildItem -LiteralPath (Join-Path $published '.workflow\.transactions') -Force -ErrorAction SilentlyContinue).Count -eq 0) "caught sync failure removes transaction residue"
+
+    $lockPath=Join-Path $published '.workflow\.mutation.lock';New-Item -ItemType Directory -Force -Path (Split-Path -Parent $lockPath)|Out-Null
+    $heldLock=[IO.File]::Open($lockPath,[IO.FileMode]::Create,[IO.FileAccess]::ReadWrite,[IO.FileShare]::None)
+    try {
+      $beforeConcurrent=Get-TreeFingerprint (Join-Path $published '.workflow\specs')
+      $beforeConcurrentReceipt=(Get-FileHash -Algorithm SHA256 -LiteralPath (Join-Path $multiRoot '.sync.json')).Hash
+      $null=(& $publishedCli sync --change multi-delta --json -ProjectRoot $published 2>&1 | Out-String)
+      Assert-True ($LASTEXITCODE -ne 0) "a concurrent lifecycle writer is rejected"
+      Assert-True ((Get-TreeFingerprint (Join-Path $published '.workflow\specs')) -eq $beforeConcurrent -and (Get-FileHash -Algorithm SHA256 -LiteralPath (Join-Path $multiRoot '.sync.json')).Hash -eq $beforeConcurrentReceipt -and @(Get-ChildItem -LiteralPath (Join-Path $published '.workflow\.transactions') -Force -ErrorAction SilentlyContinue).Count -eq 0) "writer rejection creates no transaction or lifecycle mutation"
+      $lockedDoctor=((& $publishedCli doctor --json -ProjectRoot $published)|Out-String|ConvertFrom-Json)
+      Assert-True ($lockedDoctor.valid -eq $false -and (($lockedDoctor.errors -join "`n") -match 'mutation lock')) "Doctor reports the lifecycle lock"
+    } finally {
+      $heldLock.Dispose()
+      Remove-Item -LiteralPath $lockPath -Force -ErrorAction SilentlyContinue
+    }
+
+    # A hard process exit leaves committing state; Doctor observes without healing, then the next writer recovers first.
+    try {
+      $env:WORKFLOW_ENABLE_TEST_HOOKS='1'
+      $env:WORKFLOW_TEST_FAILPOINT='crash-after-first-target'
+      & $testPowerShellPath -NoProfile -ExecutionPolicy Bypass -File $publishedCli sync --change multi-delta --json -ProjectRoot $published 2>$null | Out-Null
+      $crashExit=$LASTEXITCODE
+    } finally {
+      Remove-Item Env:WORKFLOW_ENABLE_TEST_HOOKS -ErrorAction SilentlyContinue
+      Remove-Item Env:WORKFLOW_TEST_FAILPOINT -ErrorAction SilentlyContinue
+    }
+    Assert-True ($crashExit -eq 86) "crash failpoint exits the mutating process after its first target"
+    Assert-True ((Get-TreeFingerprint (Join-Path $published '.workflow\specs')) -ne $transactionBefore) "interrupted commit leaves observable partial target state for recovery"
+    $residueBefore=Get-TreeFingerprint (Join-Path $published '.workflow\.transactions')
+    $staleLockBefore=(Get-FileHash -Algorithm SHA256 -LiteralPath $lockPath).Hash
+    $interruptedDoctor=((& $publishedCli doctor --json -ProjectRoot $published)|Out-String|ConvertFrom-Json)
+    Assert-True ($interruptedDoctor.valid -eq $false -and (($interruptedDoctor.errors -join "`n") -match 'mutation lock') -and (($interruptedDoctor.errors -join "`n") -match 'committing')) "Doctor reports interrupted transaction and stale lock"
+    Assert-True ((Get-TreeFingerprint (Join-Path $published '.workflow\.transactions')) -eq $residueBefore -and (Get-FileHash -Algorithm SHA256 -LiteralPath $lockPath).Hash -eq $staleLockBefore) "Doctor leaves interrupted transaction state byte-for-byte unchanged"
+    Set-Content -Encoding utf8 (Join-Path $multiDelta 'spec.md') 'invalid delta after interruption'
+    $null=(& $publishedCli sync --change multi-delta --json -ProjectRoot $published 2>&1|Out-String)
+    Assert-True ($LASTEXITCODE -ne 0) "post-crash sync can fail planning after recovery"
+    Assert-True ((Get-TreeFingerprint (Join-Path $published '.workflow\specs')) -eq $transactionBefore -and (Get-FileHash -Algorithm SHA256 -LiteralPath (Join-Path $multiRoot '.sync.json')).Hash -eq $receiptBefore) "next writer restores interrupted targets before recomputing the plan"
+    Assert-True (-not(Test-Path -LiteralPath $lockPath) -and @(Get-ChildItem -LiteralPath (Join-Path $published '.workflow\.transactions') -Force -ErrorAction SilentlyContinue).Count -eq 0) "recovery takes over the stale lock and removes transaction residue"
+    Set-Content -Encoding utf8 (Join-Path $multiDelta 'spec.md') $transactionDeltaText
+
+    # Receipt failure rolls back every earlier specification and design write.
+    try {
+      $env:WORKFLOW_ENABLE_TEST_HOOKS='1'
+      $env:WORKFLOW_TEST_FAILPOINT='before-receipt-target'
+      $null=(& $publishedCli sync --change multi-delta --json -ProjectRoot $published 2>&1|Out-String)
+      Assert-True ($LASTEXITCODE -ne 0) "receipt failpoint interrupts sync after capability writes"
+    } finally {
+      Remove-Item Env:WORKFLOW_ENABLE_TEST_HOOKS -ErrorAction SilentlyContinue
+      Remove-Item Env:WORKFLOW_TEST_FAILPOINT -ErrorAction SilentlyContinue
+    }
+    Assert-True ((Get-TreeFingerprint (Join-Path $published '.workflow\specs')) -eq $transactionBefore -and (Get-FileHash -Algorithm SHA256 -LiteralPath (Join-Path $multiRoot '.sync.json')).Hash -eq $receiptBefore) "receipt failure restores every earlier lifecycle write"
+
+    # Unsafe transaction journals block mutation and are never auto-deleted.
+    $unsafeId=[guid]::NewGuid().ToString('N');$unsafeRoot=Join-Path $published ".workflow\.transactions\$unsafeId";New-Item -ItemType Directory -Force -Path $unsafeRoot|Out-Null
+    $unsafeJournal=[ordered]@{schemaVersion=1;id=$unsafeId;phase='prepared';operation='sync';createdAt=[DateTimeOffset]::UtcNow.ToString('o');targets=@([ordered]@{target='../escape';operation='replace';existed=$false;original='';prepared='prepared/0';role='spec'})}|ConvertTo-Json -Depth 6 -Compress
+    Set-Content -Encoding utf8 (Join-Path $unsafeRoot 'journal.json') $unsafeJournal
+    $unsafeBefore=Get-TreeFingerprint $unsafeRoot
+    $null=(& $publishedCli sync --change multi-delta --json -ProjectRoot $published 2>&1|Out-String)
+    Assert-True ($LASTEXITCODE -ne 0) "sync rejects an unsafe recovery journal"
+    $unsafeDoctor=((& $publishedCli doctor --json -ProjectRoot $published)|Out-String|ConvertFrom-Json)
+    Assert-True ($unsafeDoctor.valid -eq $false -and (($unsafeDoctor.errors -join "`n") -match 'unsafe target')) "Doctor reports an unsafe transaction journal"
+    Assert-True ((Get-TreeFingerprint $unsafeRoot) -eq $unsafeBefore -and (Get-TreeFingerprint (Join-Path $published '.workflow\specs')) -eq $transactionBefore) "unsafe journal diagnosis and mutation rejection are read-only"
+    Remove-Item -LiteralPath $unsafeRoot -Recurse -Force
+
+    # A valid prepared transaction is discarded without touching its declared target.
+    $preparedId=[guid]::NewGuid().ToString('N');$preparedRoot=Join-Path $published ".workflow\.transactions\$preparedId";New-Item -ItemType Directory -Force -Path $preparedRoot|Out-Null
+    $preparedJournal=[ordered]@{schemaVersion=1;id=$preparedId;phase='prepared';operation='sync';createdAt=[DateTimeOffset]::UtcNow.ToString('o');targets=@([ordered]@{target='.workflow/specs/prepared-fixture';operation='replace';existed=$false;original='';prepared='prepared/0';role='capability'})}|ConvertTo-Json -Depth 6 -Compress
+    Set-Content -Encoding utf8 (Join-Path $preparedRoot 'journal.json') $preparedJournal
+    Set-Content -Encoding utf8 (Join-Path $multiDelta 'spec.md') 'invalid delta after prepared transaction'
+    $null=(& $publishedCli sync --change multi-delta --json -ProjectRoot $published 2>&1|Out-String)
+    Assert-True ($LASTEXITCODE -ne 0 -and -not(Test-Path -LiteralPath $preparedRoot) -and -not(Test-Path -LiteralPath (Join-Path $published '.workflow\specs\prepared-fixture'))) "next writer discards prepared transaction before planning"
+    Set-Content -Encoding utf8 (Join-Path $multiDelta 'spec.md') $transactionDeltaText
+
+    # A committed journal keeps its published targets; the next writer only removes residue.
+    try {
+      $env:WORKFLOW_ENABLE_TEST_HOOKS='1'
+      $env:WORKFLOW_TEST_FAILPOINT='crash-after-committed'
+      & $testPowerShellPath -NoProfile -ExecutionPolicy Bypass -File $publishedCli sync --change multi-delta --json -ProjectRoot $published 2>$null|Out-Null
+      $committedCrashExit=$LASTEXITCODE
+    } finally {
+      Remove-Item Env:WORKFLOW_ENABLE_TEST_HOOKS -ErrorAction SilentlyContinue
+      Remove-Item Env:WORKFLOW_TEST_FAILPOINT -ErrorAction SilentlyContinue
+    }
+    $committedTree=Get-TreeFingerprint (Join-Path $published '.workflow\specs');$committedReceipt=(Get-FileHash -Algorithm SHA256 -LiteralPath (Join-Path $multiRoot '.sync.json')).Hash
+    $committedDoctor=((& $publishedCli doctor --json -ProjectRoot $published)|Out-String|ConvertFrom-Json)
+    Assert-True ($committedCrashExit -eq 86 -and $committedDoctor.valid -eq $false -and (($committedDoctor.errors -join "`n") -match 'committed')) "Doctor reports committed transaction cleanup residue"
+    Set-Content -Encoding utf8 (Join-Path $multiDelta 'spec.md') 'invalid delta after committed transaction'
+    $null=(& $publishedCli sync --change multi-delta --json -ProjectRoot $published 2>&1|Out-String)
+    Assert-True ($LASTEXITCODE -ne 0 -and (Get-TreeFingerprint (Join-Path $published '.workflow\specs')) -eq $committedTree -and (Get-FileHash -Algorithm SHA256 -LiteralPath (Join-Path $multiRoot '.sync.json')).Hash -eq $committedReceipt) "committed recovery preserves published targets before planning"
+    Assert-True ((Get-Content -Raw (Join-Path $multiMain 'project-notes.md')).Trim() -eq 'preserve capability-local project content') "capability directory publication preserves project-local files"
+    Assert-True (-not(Test-Path -LiteralPath $lockPath) -and @(Get-ChildItem -LiteralPath (Join-Path $published '.workflow\.transactions') -Force -ErrorAction SilentlyContinue).Count -eq 0) "committed recovery removes only lock and transaction residue"
+    Set-Content -Encoding utf8 (Join-Path $multiDelta 'spec.md') $transactionDeltaText
+
     # Rename collision must fail without altering accepted content.
     (& $publishedCli new rename-collision --json -ProjectRoot $published) | Out-Null
     $renameRoot=Join-Path $published '.workflow\changes\rename-collision'
@@ -463,6 +579,29 @@ try {
     $null=(& $publishedCli sync --change rename-collision --json -ProjectRoot $published 2>&1 | Out-String)
     Assert-True ($LASTEXITCODE -ne 0) "sync rejects a rename target that already exists"
     Assert-True ((Get-Content -Raw (Join-Path $multiMain 'spec.md')) -eq $beforeRenameCollision) "rename collision leaves accepted spec unchanged"
+
+    # Archive publishes specs, creates the archive, and removes the active change as one transaction.
+    (& $publishedCli new archive-transaction --json -ProjectRoot $published)|Out-Null
+    $archiveChange=Join-Path $published '.workflow\changes\archive-transaction'
+    Set-Content -Encoding utf8 (Join-Path $archiveChange 'proposal.md') "# Proposal`n`n## Why`nArchive safety.`n`n## What Changes`nMake archive atomic.`n`n## Capabilities`n`n### New Capabilities`n- archive-cap: archive transaction coverage.`n`n### Modified Capabilities`nNone.`n`n## Impact`nTest.`n`n## Non-goals`nProduction.`n"
+    Set-Content -Encoding utf8 (Join-Path $archiveChange 'design.md') "# Design`n`n## Context`nArchive transaction.`n`n## Goals / Non-Goals`nKeep active state on failure.`n`n## Decisions`nUse one transaction.`n`n## Risks / Trade-offs`nNone.`n"
+    Set-Content -Encoding utf8 (Join-Path $archiveChange 'tasks.md') "# Tasks`n`n- [x] 1.1 Verify archive rollback.`n"
+    $archiveDelta=Join-Path $archiveChange 'specs\archive-cap';New-Item -ItemType Directory -Force -Path $archiveDelta|Out-Null
+    Set-Content -Encoding utf8 (Join-Path $archiveDelta 'spec.md') "# archive-cap Delta`n`n## ADDED Requirements`n`n### Requirement: Atomic archive`nThe system SHALL archive lifecycle state atomically.`n`n#### Scenario: Archive target fails`n- **WHEN** archive commit stops after destination creation`n- **THEN** the active change and accepted specs are restored`n"
+    Set-Content -Encoding utf8 (Join-Path $archiveDelta 'design.md') "# archive-cap Design`n`n## Context`nArchive transaction coverage.`n"
+    $archiveChangeBefore=Get-TreeFingerprint $archiveChange;$archiveDestination=Join-Path $published ('.workflow\changes\archive\'+(Get-Date -Format 'yyyy-MM-dd')+'-archive-transaction');$archiveAccepted=Join-Path $published '.workflow\specs\archive-cap'
+    try {
+      $env:WORKFLOW_ENABLE_TEST_HOOKS='1'
+      $env:WORKFLOW_TEST_FAILPOINT='after-archive-target'
+      $null=(& $publishedCli archive archive-transaction --json -ProjectRoot $published 2>&1|Out-String)
+      Assert-True ($LASTEXITCODE -ne 0) "archive failpoint interrupts after destination creation"
+    } finally {
+      Remove-Item Env:WORKFLOW_ENABLE_TEST_HOOKS -ErrorAction SilentlyContinue
+      Remove-Item Env:WORKFLOW_TEST_FAILPOINT -ErrorAction SilentlyContinue
+    }
+    Assert-True ((Get-TreeFingerprint $archiveChange) -eq $archiveChangeBefore) "archive failure restores the complete active change byte-for-byte"
+    Assert-True (-not(Test-Path -LiteralPath $archiveDestination) -and -not(Test-Path -LiteralPath $archiveAccepted)) "archive failure removes destination and accepted-spec writes"
+    Assert-True (-not(Test-Path -LiteralPath $lockPath) -and @(Get-ChildItem -LiteralPath (Join-Path $published '.workflow\.transactions') -Force -ErrorAction SilentlyContinue).Count -eq 0) "archive rollback releases lock and removes transaction residue"
 
     $duplicateMain=Join-Path $published '.workflow\specs\duplicate-cap';New-Item -ItemType Directory -Force -Path $duplicateMain|Out-Null
     Set-Content -Encoding utf8 (Join-Path $duplicateMain 'spec.md') "# duplicate-cap Specification`n`n## Purpose`nDuplicate validation.`n`n### Requirement: Same name`nThe system SHALL do one thing.`n`n#### Scenario: One`n- **WHEN** one runs`n- **THEN** one succeeds`n`n### Requirement: Same name`nThe system SHALL do another thing.`n`n#### Scenario: Two`n- **WHEN** two runs`n- **THEN** two succeeds`n"

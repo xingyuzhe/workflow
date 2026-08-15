@@ -59,7 +59,7 @@ explore（可选） → new 或 ff → continue → grill（可选）
 | `verify` | 对照规格给出 pass/fail 与剩余缺口，不归档 |
 | `sync` | 将 delta 同步到 `.workflow/specs/` |
 | `archive` | 校验、同步并归档 change；合并仍需单独授权 |
-| `doctor` | 只读检查安装、schema、配对与漂移 |
+| `doctor` | 只读检查安装、schema、配对、漂移与事务残留 |
 
 本地 CLI 的机器接口位于 `.agents/skills/workflow/bin/workflow.ps1`，支持 `new`、`status`、`instructions`、`validate`、`sync`、`archive` 和 `doctor`。不得为运行本工作流安装或下载外部生命周期工具。
 
