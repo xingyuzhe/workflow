@@ -40,7 +40,7 @@ Write-Host "Workflow init"
 Write-Host "  Source: $Source"
 Write-Host "  Target: $Target"
 Write-Host "  Clients: $($Clients -join ', ')"
-Install-WorkflowV2 -SourceRoot $Source -TargetRoot $Target -Clients $Clients
+Install-Workflow -SourceRoot $Source -TargetRoot $Target -Clients $Clients
 
 $doctor = Invoke-WorkflowDoctor -ProjectRoot $Target -Clients $Clients
 if ($doctor.ExitCode -ne 0) {

@@ -26,6 +26,8 @@ The repository already owns lifecycle contracts and deployment logic, but it del
 - Machine-readable schema metadata uses JSON; human-authored project configuration retains the existing constrained YAML format.
 - Lifecycle contracts invoke the exact repository-local CLI path. Missing CLI is deployment corruption and MUST NOT trigger installation.
 - Repository files are authoritative. Optional cache/state never overrides them.
+- The local implementation uses the upstream CLI only as a behavior reference for dependency states, schema resolution, validation boundaries, and failure atomicity. It remains an independent PowerShell implementation and does not import upstream code or packages.
+- Generated JSON uses one compact canonical representation so Windows PowerShell and PowerShell 7 produce byte-identical artifacts.
 
 # Risks / Trade-offs
 

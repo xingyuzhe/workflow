@@ -105,7 +105,7 @@ try {
   $r0 = Invoke-WorkflowDoctor -ProjectRoot $proj
   Assert-True ($r0.ExitCode -ne 0) "doctor fails on incomplete project"
 
-  Install-WorkflowV2 -SourceRoot $repoRoot -TargetRoot $proj
+  Install-Workflow -SourceRoot $repoRoot -TargetRoot $proj
   Assert-True (-not (Test-Path (Join-Path $proj '.cursor\skills\openspec-v1.5.0'))) "install purges legacy skills"
   Assert-True (Test-Path (Join-Path $proj '.workflow\specs\keep-me\spec.md')) "migrates and preserves business specs"
   Assert-True (-not(Test-Path (Join-Path $proj 'openspec'))) "removes superseded openspec data root"
@@ -149,7 +149,7 @@ try {
   Assert-True (-not (Test-Path (Join-Path $proj '.cursor\workflow\version.json'))) "does not duplicate Cursor metadata"
   Assert-True (-not (Test-Path (Join-Path $proj '.agents\workflow\version.json'))) "does not duplicate Codex metadata"
 
-  Install-WorkflowV2 -SourceRoot $repoRoot -TargetRoot $proj
+  Install-Workflow -SourceRoot $repoRoot -TargetRoot $proj
   $agents2 = Get-Content -Raw -Encoding utf8 (Join-Path $proj 'AGENTS.md')
   Assert-True (($agents2 -split 'BEGIN WORKFLOW MANAGED').Count -eq 2) "reinstall keeps one managed AGENTS block"
   Assert-True ($agents2 -match 'Keep this custom guidance') "reinstall still preserves project AGENTS guidance"
@@ -170,11 +170,6 @@ try {
   Repair-WorkflowInstall -ProjectRoot $proj
   Assert-True ((Get-Content -Raw -Encoding utf8 $generatedRule) -match 'Early project rule') "explicit repair restores generated rule"
   Assert-True ((Invoke-WorkflowDoctor -ProjectRoot $proj).ExitCode -eq 0) "doctor passes after explicit repair"
-
-  $statePath = Write-WorkflowState -ProjectRoot $proj -ActiveChange 'neutral-test' -Phase 'apply'
-  Assert-True ($statePath -eq (Join-Path $proj '.workflow\state.json')) "state writes only to neutral authority"
-  Assert-True (-not (Test-Path (Join-Path $proj '.cursor\workflow\state.json'))) "does not duplicate Cursor state"
-  Assert-True (-not (Test-Path (Join-Path $proj '.agents\workflow\state.json'))) "does not duplicate Codex state"
 
   # unpaired main spec → doctor fails
   Remove-Item -Force (Join-Path $proj '.workflow\specs\keep-me\design.md')
@@ -234,7 +229,7 @@ try {
     '  proposal:',
     '    - Keep my private rule forever'
   ) | Set-Content -Encoding utf8 (Join-Path $proj2 'openspec\config.yaml')
-  Install-WorkflowV2 -SourceRoot $repoRoot -TargetRoot $proj2
+  Install-Workflow -SourceRoot $repoRoot -TargetRoot $proj2
   Assert-True (Test-Path (Join-Path $proj2 '.workflow\config.workflow.yaml')) "writes config.workflow.yaml"
   Assert-True (Test-Path (Join-Path $proj2 '.workflow\config.project.yaml')) "creates config.project.yaml via migrate"
   $projCfg1 = Get-Content -Raw (Join-Path $proj2 '.workflow\config.project.yaml')
@@ -250,7 +245,7 @@ try {
     '    - Keep my private rule forever',
     '    - Second private line'
   ) | Set-Content -Encoding utf8 (Join-Path $proj2 '.workflow\config.project.yaml')
-  Install-WorkflowV2 -SourceRoot $repoRoot -TargetRoot $proj2
+  Install-Workflow -SourceRoot $repoRoot -TargetRoot $proj2
   $projCfg2 = Get-Content -Raw (Join-Path $proj2 '.workflow\config.project.yaml')
   Assert-True ($projCfg2 -match 'Second private line') "second install does not overwrite project config"
 
@@ -307,7 +302,7 @@ try {
 
   # self-install must not wipe source pack
   Assert-True (Test-Path (Join-Path $repoRoot '.workflow\pack\prompts\apply.md')) "neutral repo pack exists before self-init"
-  Install-WorkflowV2 -SourceRoot $repoRoot -TargetRoot $repoRoot
+  Install-Workflow -SourceRoot $repoRoot -TargetRoot $repoRoot
   Assert-True (Test-Path (Join-Path $repoRoot '.workflow\pack\prompts\apply.md')) "self-init preserves neutral pack"
   Assert-True (Test-Path (Join-Path $repoRoot '.cursor\commands\workflow-apply.md')) "self-init preserves workflow-apply"
   Assert-True (Test-Path (Join-Path $repoRoot '.agents\skills\workflow\SKILL.md')) "self-init preserves Codex workflow skill"
@@ -316,9 +311,9 @@ try {
   New-Item -ItemType Directory -Force -Path (Join-Path $bad '.workflow') | Out-Null
   Set-Content -Encoding utf8 (Join-Path $bad '.workflow\mcp.json') '{ "schemaVersion": 1, "servers": { "bad": { "transport": "stdio", "command": "x", "mystery": true } } }'
   Set-Content -Encoding utf8 (Join-Path $bad '.workflow\rules.json') '{ "schemaVersion": 1, "rules": [] }'
-  Assert-Throws { Install-WorkflowV2 -SourceRoot $repoRoot -TargetRoot $bad } 'mystery' "unknown MCP fields fail explicitly"
+  Assert-Throws { Install-Workflow -SourceRoot $repoRoot -TargetRoot $bad } 'mystery' "unknown MCP fields fail explicitly"
   Set-Content -Encoding utf8 (Join-Path $bad '.workflow\mcp.json') '{ "schemaVersion": 1, "servers": { "bad": { "transport": "stdio", "command": "x", "enabled": "yes" } } }'
-  Assert-Throws { Install-WorkflowV2 -SourceRoot $repoRoot -TargetRoot $bad } 'enabled.*boolean' "invalid MCP field types fail explicitly"
+  Assert-Throws { Install-Workflow -SourceRoot $repoRoot -TargetRoot $bad } 'enabled.*boolean' "invalid MCP field types fail explicitly"
 
   # Codex-only deployment must treat the entire Cursor tree as out of scope.
   $codexOnly = Join-Path $tmp 'codex-only'
@@ -333,7 +328,7 @@ try {
     }) -join "`n")
   }
   $cursorBefore = &$cursorFingerprint
-  Install-WorkflowV2 -SourceRoot $repoRoot -TargetRoot $codexOnly -Clients codex
+  Install-Workflow -SourceRoot $repoRoot -TargetRoot $codexOnly -Clients codex
   $cursorAfter = &$cursorFingerprint
   Assert-True ($cursorAfter -eq $cursorBefore) "Codex-only install leaves Cursor tree byte-for-byte unchanged"
   Assert-True (Test-Path (Join-Path $codexOnly '.agents\skills\workflow\SKILL.md')) "Codex-only install creates Codex skill"
@@ -355,7 +350,7 @@ try {
   Set-Content -Encoding utf8 (Join-Path $published '.agents\skills\private-skill\SKILL.md') 'private skill'
   Set-Content -Encoding utf8 (Join-Path $published '.workflow\pack\source.md') 'must not ship'
   Set-Content -Encoding utf8 (Join-Path $published '.agents\rules\.workflow-managed.json') '{"files":[]}'
-  Set-Content -Encoding utf8 (Join-Path $published 'scripts\init.ps1') 'Install-WorkflowV2'
+  Set-Content -Encoding utf8 (Join-Path $published 'scripts\init.ps1') 'Install-Workflow'
   Set-Content -Encoding utf8 (Join-Path $published 'scripts\doctor.ps1') 'Invoke-WorkflowDoctor'
   Set-Content -Encoding utf8 (Join-Path $published 'scripts\lib\WorkflowDeploy.psm1') 'WorkflowVersion'
   Publish-WorkflowCodexArtifact -SourceRoot $repoRoot -TargetRoot $published
@@ -384,9 +379,80 @@ try {
     $env:PATH=''
     $publishedDoctorResult=((& $publishedCli doctor --json -ProjectRoot $published) | Out-String | ConvertFrom-Json)
     Assert-True ($publishedDoctorResult.valid -eq $true) "published local CLI doctor succeeds with empty PATH"
+
+    # Incomplete content must not become apply-ready merely because files exist.
+    (& $publishedCli new incomplete-content --json -ProjectRoot $published) | Out-Null
+    $incompleteRoot=Join-Path $published '.workflow\changes\incomplete-content'
+    Set-Content -Encoding utf8 (Join-Path $incompleteRoot 'proposal.md') "# Proposal`n`n## Why`nReady.`n`n## What Changes`nTest validation.`n`n## Capabilities`n`n### New Capabilities`nNone.`n`n### Modified Capabilities`nNone.`n`n## Impact`nTest.`n`n## Non-goals`nProduction.`n"
+    $dependencyStatus=((& $publishedCli status --change incomplete-content --json -ProjectRoot $published) | Out-String | ConvertFrom-Json)
+    $tasksStatus=@($dependencyStatus.artifacts|Where-Object{$_.id -eq 'tasks'})[0]
+    Assert-True ($tasksStatus.status -eq 'blocked') "status blocks tasks while design dependency is incomplete"
+    Assert-True (@($tasksStatus.missingDeps) -contains 'design') "status reports the missing design dependency"
+    Set-Content -Encoding utf8 (Join-Path $incompleteRoot 'design.md') ''
+    Set-Content -Encoding utf8 (Join-Path $incompleteRoot 'tasks.md') ''
+    $incompleteStatus=((& $publishedCli status --change incomplete-content --json -ProjectRoot $published) | Out-String | ConvertFrom-Json)
+    Assert-True ($incompleteStatus.applyReady -eq $false) "empty artifact files are not apply-ready"
+    $incompleteValidation=((& $publishedCli validate incomplete-content --json -ProjectRoot $published) | Out-String | ConvertFrom-Json)
+    Assert-True ($incompleteValidation.valid -eq $false) "validate honors the positional change name and rejects empty artifacts"
+    Set-Content -Encoding utf8 (Join-Path $incompleteRoot 'design.md') "# Design`n`n## Context`nValidation.`n`n## Goals / Non-Goals`nComplete artifacts.`n`n## Decisions`nUse fixtures.`n`n## Risks / Trade-offs`nNone.`n"
+    Set-Content -Encoding utf8 (Join-Path $incompleteRoot 'tasks.md') "# Tasks`n`nNo checklist exists.`n"
+    $null=(& $publishedCli archive incomplete-content --json -ProjectRoot $published 2>&1 | Out-String)
+    Assert-True ($LASTEXITCODE -ne 0) "archive rejects a tasks artifact with no checklist items"
+
+    # Archive collision must fail before sync mutates accepted specifications.
+    (& $publishedCli new collision-check --json -ProjectRoot $published) | Out-Null
+    $collisionRoot=Join-Path $published '.workflow\changes\collision-check'
+    Set-Content -Encoding utf8 (Join-Path $collisionRoot 'proposal.md') "# Proposal`n`n## Why`nCollision.`n`n## What Changes`nCheck failure safety.`n`n## Capabilities`n`n### New Capabilities`n- collision-cap: collision behavior.`n`n### Modified Capabilities`nNone.`n`n## Impact`nTest.`n`n## Non-goals`nProduction.`n"
+    Set-Content -Encoding utf8 (Join-Path $collisionRoot 'design.md') "# Design`n`n## Context`nCollision.`n`n## Goals / Non-Goals`nAvoid partial writes.`n`n## Decisions`nPreflight destination.`n`n## Risks / Trade-offs`nNone.`n"
+    Set-Content -Encoding utf8 (Join-Path $collisionRoot 'tasks.md') "# Tasks`n`n- [x] 1.1 Check collision safety.`n"
+    $collisionSpec=Join-Path $collisionRoot 'specs\collision-cap';New-Item -ItemType Directory -Force -Path $collisionSpec|Out-Null
+    Set-Content -Encoding utf8 (Join-Path $collisionSpec 'spec.md') "# collision-cap Specification`n`n## ADDED Requirements`n`n### Requirement: Collision safety`nThe system SHALL preflight archive collisions.`n`n#### Scenario: Destination exists`n- **WHEN** archive starts`n- **THEN** accepted specifications remain unchanged`n"
+    Set-Content -Encoding utf8 (Join-Path $collisionSpec 'design.md') "# collision-cap Design`n`n## Context`nCollision safety.`n"
+    $collisionArchive=Join-Path $published ('.workflow\changes\archive\'+(Get-Date -Format 'yyyy-MM-dd')+'-collision-check');New-Item -ItemType Directory -Force -Path $collisionArchive|Out-Null
+    $collisionMain=Join-Path $published '.workflow\specs\collision-cap\spec.md'
+    $null=(& $publishedCli archive collision-check --json -ProjectRoot $published 2>&1 | Out-String)
+    Assert-True ($LASTEXITCODE -ne 0) "archive rejects an existing destination"
+    Assert-True (-not(Test-Path -LiteralPath $collisionMain)) "archive collision causes no specification write"
+
+    # Delta synchronization supports all operations and commits only a validated result.
+    $multiMain=Join-Path $published '.workflow\specs\multi-cap';New-Item -ItemType Directory -Force -Path $multiMain|Out-Null
+    Set-Content -Encoding utf8 (Join-Path $multiMain 'spec.md') "# multi-cap Specification`n`n## Purpose`nTest delta operations.`n`n### Requirement: Alpha`nThe system SHALL keep alpha.`n`n#### Scenario: Alpha`n- **WHEN** alpha runs`n- **THEN** alpha succeeds`n`n### Requirement: Beta`nThe system SHALL keep beta.`n`n#### Scenario: Beta`n- **WHEN** beta runs`n- **THEN** beta succeeds`n"
+    Set-Content -Encoding utf8 (Join-Path $multiMain 'design.md') "# multi-cap Design`n`n## Context`nAccepted baseline.`n"
+    (& $publishedCli new multi-delta --json -ProjectRoot $published) | Out-Null
+    $multiRoot=Join-Path $published '.workflow\changes\multi-delta'
+    Set-Content -Encoding utf8 (Join-Path $multiRoot 'proposal.md') "# Proposal`n`n## Why`nDelta coverage.`n`n## What Changes`nExercise all operations.`n`n## Capabilities`n`n### New Capabilities`nNone.`n`n### Modified Capabilities`n- multi-cap: update accepted requirements.`n`n## Impact`nTest.`n`n## Non-goals`nProduction.`n"
+    Set-Content -Encoding utf8 (Join-Path $multiRoot 'design.md') "# Design`n`n## Context`nDelta operations.`n`n## Goals / Non-Goals`nVerify merge.`n`n## Decisions`nUse one delta.`n`n## Risks / Trade-offs`nNone.`n"
+    Set-Content -Encoding utf8 (Join-Path $multiRoot 'tasks.md') "# Tasks`n`n- [x] 1.1 Exercise delta operations.`n"
+    $multiDelta=Join-Path $multiRoot 'specs\multi-cap';New-Item -ItemType Directory -Force -Path $multiDelta|Out-Null
+    Set-Content -Encoding utf8 (Join-Path $multiDelta 'spec.md') "# multi-cap Delta`n`n## ADDED Requirements`n`n### Requirement: Gamma`nThe system SHALL add gamma.`n`n#### Scenario: Gamma`n- **WHEN** gamma runs`n- **THEN** gamma succeeds`n`n## MODIFIED Requirements`n`n### Requirement: Alpha`nThe system SHALL update alpha.`n`n#### Scenario: Updated alpha`n- **WHEN** alpha runs`n- **THEN** updated alpha succeeds`n`n## REMOVED Requirements`n`n### Requirement: Beta`n`n## RENAMED Requirements`n`nFROM: Gamma`nTO: Delta`n"
+    Set-Content -Encoding utf8 (Join-Path $multiDelta 'design.md') "# multi-cap Design`n`n## Context`nMerged design.`n"
+    (& $publishedCli sync --change multi-delta --json -ProjectRoot $published) | Out-Null
+    $multiMerged=Get-Content -Raw (Join-Path $multiMain 'spec.md')
+    Assert-True ($multiMerged -match 'Requirement: Alpha' -and $multiMerged -match 'update alpha') "sync applies MODIFIED requirements"
+    Assert-True ($multiMerged -notmatch 'Requirement: Beta') "sync applies REMOVED requirements"
+    Assert-True ($multiMerged -match 'Requirement: Delta' -and $multiMerged -notmatch 'Requirement: Gamma') "sync applies ADDED and RENAMED requirements"
+
+    # Doctor must detect drift in a file covered by the local artifact manifest.
+    $manifestedPrompt=Join-Path $published '.agents\skills\workflow\references\prompts\apply.md'
+    $manifestedBackup=Join-Path $tmp 'manifested-prompt.backup';Copy-Item -LiteralPath $manifestedPrompt -Destination $manifestedBackup
+    [IO.File]::AppendAllText($manifestedPrompt,"manifest drift",[Text.UTF8Encoding]::new($false))
+    $driftedLocalDoctor=((& $publishedCli doctor --json -ProjectRoot $published) | Out-String | ConvertFrom-Json)
+    Assert-True ($driftedLocalDoctor.valid -eq $false) "published local CLI doctor detects manifested artifact drift"
+    Copy-Item -LiteralPath $manifestedBackup -Destination $manifestedPrompt -Force
+
+    # `new` must use the configured schema rather than a built-in workflow-contract path.
+    $custom=Join-Path $tmp 'custom-schema-project';$customSchema=Join-Path $custom '.workflow\schemas\brief-flow';New-Item -ItemType Directory -Force -Path (Join-Path $customSchema 'templates')|Out-Null
+    Set-Content -Encoding utf8 (Join-Path $custom '.workflow\config.workflow.yaml') "schema: brief-flow`n"
+    Set-Content -Encoding utf8 (Join-Path $custom '.workflow\config.yaml') "schema: brief-flow`n"
+    Set-Content -Encoding utf8 (Join-Path $customSchema 'schema.json') '{"name":"brief-flow","version":1,"artifacts":[{"id":"brief","path":"drafts/brief.md","required":true,"requires":[],"template":"templates/brief.md","instruction":"Write a brief."}]}'
+    Set-Content -Encoding utf8 (Join-Path $customSchema 'templates\brief.md') "## Intent`n`n<!-- Explain intent -->`n"
+    $customNew=((& $publishedCli new custom-change --json -ProjectRoot $custom) | Out-String | ConvertFrom-Json)
+    Assert-True ($customNew.schema -eq 'brief-flow') "new resolves the configured custom schema"
+    Assert-True (Test-Path (Join-Path $custom '.workflow\changes\custom-change\drafts\brief.md')) "new creates the configured nested artifact path"
+
     (& $publishedCli new cli-smoke --json -ProjectRoot $published) | Out-Null
     $smokeRoot=Join-Path $published '.workflow\changes\cli-smoke'
-    Set-Content -Encoding utf8 (Join-Path $smokeRoot 'proposal.md') "# Proposal`n`n## Why`nSmoke.`n`n## What Changes`nLocal lifecycle.`n`n## Capabilities`n- workflow-smoke`n`n## Impact`nTest only.`n"
+    Set-Content -Encoding utf8 (Join-Path $smokeRoot 'proposal.md') "# Proposal`n`n## Why`nSmoke.`n`n## What Changes`nLocal lifecycle.`n`n## Capabilities`n`n### New Capabilities`n- workflow-smoke: local lifecycle smoke coverage.`n`n### Modified Capabilities`nNone.`n`n## Impact`nTest only.`n`n## Non-goals`nProduction behavior.`n"
     Set-Content -Encoding utf8 (Join-Path $smokeRoot 'design.md') "# Design`n`n## Context`nSmoke.`n`n## Goals / Non-Goals`n- Goal: verify local CLI.`n`n## Decisions`nUse local files.`n`n## Risks / Trade-offs`nNone.`n"
     Set-Content -Encoding utf8 (Join-Path $smokeRoot 'tasks.md') "# Tasks`n`n- [x] 1.1 Verify local CLI lifecycle.`n"
     $smokeSpecRoot=Join-Path $smokeRoot 'specs\workflow-smoke'

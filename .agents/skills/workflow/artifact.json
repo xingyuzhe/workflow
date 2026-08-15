@@ -1,7 +1,1 @@
-﻿{
-    "schemaVersion":  1,
-    "name":  "workflow",
-    "version":  "5.0.0",
-    "contracts":  "references",
-    "cli":  "bin/workflow.ps1"
-}
+﻿{"schemaVersion":1,"name":"workflow","version":"5.0.0","contracts":"references","cli":"bin/workflow.ps1"}

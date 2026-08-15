@@ -8,6 +8,9 @@
 - `.workflow/cli/WorkflowRuntime.psm1`: source implementation.
 - `.agents/skills/workflow/bin/`: generated published copy.
 - Commands return human-readable output by default and structured JSON with `--json`.
+- Artifact completeness is evaluated from the configured schema and templates; dependency status is derived from the schema graph.
+- Sync builds every resulting spec in memory, validates the complete set, and writes only after preparation succeeds.
+- Doctor verifies the published manifest with portable line-ending hashes.
 
 # State
 

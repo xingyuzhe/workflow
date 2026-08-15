@@ -1,8 +1,8 @@
-# Why
+## Why
 
 The current custom lifecycle still names the upstream OpenSpec product and declares its CLI authoritative. Agents therefore attempt to install an external package when the command is absent. The workflow must be self-contained, locally executable, and unambiguously owned by this repository.
 
-# What Changes
+## What Changes
 
 - **BREAKING**: Rename the live runtime, skill, commands, configuration, schemas, changes, and specs to the single `workflow` namespace.
 - **BREAKING**: Replace external OpenSpec status/instructions/sync/archive behavior with a repository-owned local `workflow.ps1` CLI.
@@ -10,18 +10,23 @@ The current custom lifecycle still names the upstream OpenSpec product and decla
 - Remove external CLI discovery, NVM scanning, install/download guidance, compatibility aliases, and superseded live paths.
 - Preserve configuration, schema, artifact dependency, validation, synchronization, and archive capabilities under repository ownership.
 
-# Capabilities
+## Capabilities
 
-## New Capabilities
+### New Capabilities
 
-- `workflow-cli`
+- `workflow-cli`: repository-owned lifecycle execution and validation.
 
-## Modified Capabilities
+### Modified Capabilities
 
 - `workflow-runtime`
 - `schema-pack`
 - `deploy-kit`
 
-# Impact and Non-goals
+## Impact
 
-This is workflow version 5.0.0. It changes all live lifecycle entry points and paths. Historical Git commits remain history, but no runtime compatibility layer is retained. Deploying 5.0.0 to downstream repositories is explicitly outside this change.
+This is workflow version 5.0.0. It changes all live lifecycle entry points and paths. Historical Git commits remain history, but no runtime compatibility layer is retained.
+
+## Non-goals
+
+- Deploying 5.0.0 to downstream repositories in this change.
+- Reusing or depending on the upstream CLI implementation.

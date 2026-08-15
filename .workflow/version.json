@@ -1,9 +1,1 @@
-﻿{
-    "version":  "5.0.0",
-    "schema":  "workflow-contract",
-    "engine":  "powershell",
-    "clients":  [
-                    "cursor",
-                    "codex"
-                ]
-}
+﻿{"version":"5.0.0","schema":"workflow-contract","engine":"powershell","clients":["cursor","codex"]}

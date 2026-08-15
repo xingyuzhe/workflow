@@ -13,3 +13,12 @@ The breaking migration SHALL remove workflow-owned superseded skills, command ad
 #### Scenario: Upgrade an existing repository
 - **WHEN** version 5.0.0 publication completes
 - **THEN** project data MUST exist only in the new workflow namespace and superseded workflow-owned runtime paths MUST be absent
+
+## ADDED Requirements
+
+### Requirement: Cross-runtime deterministic generation
+Workflow-owned generated files SHALL be byte-identical when produced by supported Windows PowerShell and PowerShell 7 runtimes from identical source input.
+
+#### Scenario: Build with both PowerShell runtimes
+- **WHEN** build or self-install runs once with each supported runtime
+- **THEN** no tracked generated file MUST change between runs

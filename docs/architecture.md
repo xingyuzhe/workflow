@@ -33,7 +33,7 @@ Cursor 获得 `/workflow:*` 命令与 router；Codex 获得 `$workflow` skill、
 
 ## 构建、发布与 Doctor
 
-`scripts/build.ps1` 从真相源重建 `.agents/skills/workflow`。发布复制该 skill，并安装项目使用的 `.workflow` 配置与 schema；项目已有 changes、specs、私有配置、规则和其他 skills 均须保留。
+`scripts/build.ps1` 从真相源重建 `.agents/skills/workflow`。发布复制该 skill，并安装项目使用的 `.workflow` 配置与 schema；源码专用的 `.workflow/pack`、`.workflow/cli`、默认规则和 MCP 输入不发布。项目已有 changes、specs、私有配置、项目规则、项目 MCP 配置和其他 skills 均须保留。
 
 源码 Doctor 检查源与生成物一致性。发布态 CLI 的 `doctor` 检查本地 schema、spec/design 配对、旧命名空间与本地 CLI 完整性。两者都不通过下载依赖来“修复”环境。
 
