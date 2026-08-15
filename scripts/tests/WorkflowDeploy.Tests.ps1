@@ -367,9 +367,27 @@ try {
   Assert-True ($doctorContract -match 'check-deployment\.ps1') "doctor contract routes to source-owned checker"
   Assert-True ($doctorContract -notmatch 'pwsh -File scripts/doctor\.ps1') "doctor contract does not reference deleted downstream checker"
   Assert-True ($doctorContract -match 'Do not expect or recreate `\.workflow`') "doctor contract preserves artifact-only boundary"
+  $publishedDoctor=Join-Path $published '.agents\skills\openspec-workflow\references\prompts\doctor.md'
+  $publishedDoctorBytes=[System.IO.File]::ReadAllBytes($publishedDoctor)
+  $lfDoctor=New-Object System.IO.MemoryStream
+  try {
+    for($i=0;$i -lt $publishedDoctorBytes.Length;$i++){
+      if($publishedDoctorBytes[$i] -eq 13){
+        if(($i+1) -lt $publishedDoctorBytes.Length -and $publishedDoctorBytes[$i+1] -eq 10){$i++}
+        $lfDoctor.WriteByte(10)
+      }else{$lfDoctor.WriteByte($publishedDoctorBytes[$i])}
+    }
+    [System.IO.File]::WriteAllBytes($publishedDoctor,$lfDoctor.ToArray())
+  }finally{$lfDoctor.Dispose()}
   $artifactDoctor=Invoke-WorkflowArtifactDoctor -ProjectRoot $published -SourceRoot $repoRoot
   if($artifactDoctor.ExitCode -ne 0){$artifactDoctor.Errors|%{Write-Host "ARTIFACT DOCTOR: $_" -ForegroundColor Yellow}}
-  Assert-True ($artifactDoctor.ExitCode -eq 0) "artifact Doctor passes against source artifact"
+  Assert-True ($artifactDoctor.ExitCode -eq 0) "artifact Doctor accepts equivalent LF and CRLF content"
+  [System.IO.File]::AppendAllText($publishedDoctor,"substantive drift",[System.Text.UTF8Encoding]::new($false))
+  $beforeDoctorHash=(Get-FileHash -Algorithm SHA256 -LiteralPath $publishedDoctor).Hash
+  $driftDoctor=Invoke-WorkflowArtifactDoctor -ProjectRoot $published -SourceRoot $repoRoot
+  $afterDoctorHash=(Get-FileHash -Algorithm SHA256 -LiteralPath $publishedDoctor).Hash
+  Assert-True ($driftDoctor.ExitCode -ne 0) "artifact Doctor rejects substantive content drift"
+  Assert-True ($beforeDoctorHash -eq $afterDoctorHash) "artifact Doctor remains read-only on content drift"
 
 } finally {
   Remove-Item -Recurse -Force $tmp -ErrorAction SilentlyContinue

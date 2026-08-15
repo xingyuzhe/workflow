@@ -1,6 +1,6 @@
 # WorkflowDeploy.psm1 — platform-neutral workflow deployment
 
-$script:WorkflowVersion = '4.0.1'
+$script:WorkflowVersion = '4.0.2'
 $script:WorkflowAgentsStart = '<!-- BEGIN WORKFLOW MANAGED -->'
 $script:WorkflowAgentsEnd = '<!-- END WORKFLOW MANAGED -->'
 $script:WorkflowCodexConfigStart = '# BEGIN WORKFLOW MANAGED MCP'
@@ -137,6 +137,30 @@ function Write-WorkflowUtf8Text {
   }
   # UTF-8 with BOM helps Windows PowerShell 5.1 round-trip Chinese safely
   [System.IO.File]::WriteAllText($Path, $Text, [System.Text.UTF8Encoding]::new($true))
+}
+
+function Get-WorkflowPortableContentHash {
+  param([Parameter(Mandatory)][string]$Path)
+  $inputBytes = [System.IO.File]::ReadAllBytes($Path)
+  $canonical = New-Object System.IO.MemoryStream
+  try {
+    for ($i = 0; $i -lt $inputBytes.Length; $i++) {
+      if ($inputBytes[$i] -eq 13) {
+        if (($i + 1) -lt $inputBytes.Length -and $inputBytes[$i + 1] -eq 10) { $i++ }
+        $canonical.WriteByte(10)
+      } else {
+        $canonical.WriteByte($inputBytes[$i])
+      }
+    }
+    $sha = [System.Security.Cryptography.SHA256]::Create()
+    try {
+      return ([System.BitConverter]::ToString($sha.ComputeHash($canonical.ToArray()))).Replace('-', '')
+    } finally {
+      $sha.Dispose()
+    }
+  } finally {
+    $canonical.Dispose()
+  }
 }
 
 function Install-WorkflowCodexSkill {
@@ -834,7 +858,7 @@ function Build-WorkflowCodexArtifact {
   $skill=Join-Path $SourceRoot '.agents/skills/openspec-workflow'
   $files=@(Get-ChildItem -LiteralPath $skill -Recurse -File | Where-Object {$_.Name -notin @('artifact.json','artifact-manifest.json')} | Sort-Object FullName | ForEach-Object {
     $rel=$_.FullName.Substring($skill.Length+1).Replace('\','/')
-    [ordered]@{path=$rel;sha256=(Get-FileHash -Algorithm SHA256 -LiteralPath $_.FullName).Hash}
+    [ordered]@{path=$rel;sha256=(Get-WorkflowPortableContentHash $_.FullName)}
   })
   Write-WorkflowUtf8Text (Join-Path $skill 'artifact.json') (([ordered]@{schemaVersion=1;name='openspec-workflow';version=$script:WorkflowVersion;source='.workflow/pack'}|ConvertTo-Json)+"`n")
   Write-WorkflowUtf8Text (Join-Path $skill 'artifact-manifest.json') (([ordered]@{schemaVersion=1;version=$script:WorkflowVersion;files=$files}|ConvertTo-Json -Depth 5)+"`n")
@@ -854,7 +878,7 @@ function Test-WorkflowCodexArtifact {
     if(-not $rel -or $rel.StartsWith('/') -or $rel -match '(^|/)\.\.(/|$)'){throw "unsafe artifact path: $rel"}
     $path=Join-Path $SkillRoot $rel
     if(-not(Test-Path -LiteralPath $path -PathType Leaf)){throw "artifact file missing: $rel"}
-    $actual=(Get-FileHash -Algorithm SHA256 -LiteralPath $path).Hash
+    $actual=Get-WorkflowPortableContentHash $path
     if($actual -ne "$($entry.sha256)"){throw "artifact content drift: $rel"}
   }
 }
@@ -927,7 +951,7 @@ function Invoke-WorkflowArtifactDoctor {
       foreach($rel in @($sourceFiles+$targetFiles|Sort-Object -Unique)){
         $s=Join-Path $sourceSkill $rel;$t=Join-Path $skill $rel
         if(-not(Test-Path -LiteralPath $s) -or -not(Test-Path -LiteralPath $t)){$errors.Add("published artifact file set drift: $rel")}
-        elseif((Get-FileHash -Algorithm SHA256 -LiteralPath $s).Hash -ne (Get-FileHash -Algorithm SHA256 -LiteralPath $t).Hash){$errors.Add("published artifact content drift: $rel")}
+        elseif((Get-WorkflowPortableContentHash $s) -ne (Get-WorkflowPortableContentHash $t)){$errors.Add("published artifact content drift: $rel")}
       }
     }
   }

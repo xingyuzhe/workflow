@@ -1,66 +1,66 @@
 ﻿{
     "schemaVersion":  1,
-    "version":  "4.0.1",
+    "version":  "4.0.2",
     "files":  [
                   {
                       "path":  "agents/openai.yaml",
-                      "sha256":  "918C4FA0C1E814992E5832B3B8CFC223B6C35A9EF15A794D6B6EB5E45330EC7E"
+                      "sha256":  "7AE23492E5A690B65608FD61B4F68FB470587031A4F3E35F8EB1330AEC3187E8"
                   },
                   {
                       "path":  "references/gates/acceptance.md",
-                      "sha256":  "45FCB41875FF690A1A8E7FBB9DDB91D6EE5CEB0590B54654B3E9869D832768E6"
+                      "sha256":  "4A40C8655D56FD23B6DDD4D88113024F519C4ED73AB72AC02C128CB2A949D7D8"
                   },
                   {
                       "path":  "references/prompts/apply.md",
-                      "sha256":  "DF1B5E6B20D01926FA24D01935D62E41BD44C8E059F4241CFC1FC787C136B4AD"
+                      "sha256":  "841B7C7925C405DD58C9F4A16CE012DC0F43A250ECA8CE7CE2AAF0CCF59504F5"
                   },
                   {
                       "path":  "references/prompts/archive.md",
-                      "sha256":  "FC8BCA10B81C32ABFABB2CADB013DDEDE8BD746BA821CAE64FA8D6BBAC485278"
+                      "sha256":  "403C10FCF29391C2305CC634B7EA1840F905892253BE27C90F56786981CCD4BE"
                   },
                   {
                       "path":  "references/prompts/branch.md",
-                      "sha256":  "5CEB43D7B819F4A57705FE1B9FAD9AC7EAA71EA26B02E9C5D21EB9C90A2ABD35"
+                      "sha256":  "5774429AA3D8CF220F53427A8F7E54FBBC93B234F19EB74D424E27B65F406E89"
                   },
                   {
                       "path":  "references/prompts/continue.md",
-                      "sha256":  "ADB81A747BEC71F8CC2F89C465442D2BB267652795D2B5F08A0262F1BB1CDF77"
+                      "sha256":  "CE0A0226B2398FFE383AD427464C41CB9164F19DA45030B1D8B011F6247A6398"
                   },
                   {
                       "path":  "references/prompts/doctor.md",
-                      "sha256":  "2F63DBA2B68DAC76330EEB029359CDF8F5528532957DB01F1378C46E7F368534"
+                      "sha256":  "5FDE182E325354C3C9347B18EBD75F419B6BC81C195628C3D67E03ABEA947F48"
                   },
                   {
                       "path":  "references/prompts/explore.md",
-                      "sha256":  "EEDFDEB81208E4148B0C33FF9473E48DF28DB509E6FEF87B2D0B4C0EA6EF506F"
+                      "sha256":  "70051D7C85347433E8B1CCB0F004305E1106A29FB9D12DD54E407914C028A1B6"
                   },
                   {
                       "path":  "references/prompts/ff.md",
-                      "sha256":  "E60CC7649330DEA3976BDBDC149BAE47293B6893C2E28CA127A00EDA5E291527"
+                      "sha256":  "C825C71BF9A484F6BCFC3EE523AEECF0C20106C6BF4CCF69207734D53DE129D8"
                   },
                   {
                       "path":  "references/prompts/finish.md",
-                      "sha256":  "44ED9EB2F060AD9BAF68CE681EFBD8CCF342E642226B1E71B4A0792E4C8D4D4F"
+                      "sha256":  "11A505B32E3CC92C1D3DEE2C1F3852C49919D4351C86D67766E614495D05E16B"
                   },
                   {
                       "path":  "references/prompts/grill.md",
-                      "sha256":  "AF6CC4F5C8127B4359BCF1479CF3F76AC659425E8EDF38E89D7AAD25ADC5E997"
+                      "sha256":  "21AB7C94AA6B763179E6D18ACF751DB1174DFE1AAF4320C0A4C7DA4A3476607B"
                   },
                   {
                       "path":  "references/prompts/new.md",
-                      "sha256":  "26D262494CE6149FBFF63C89D6C90945D576DC7FAF883A8CE383DEC4E1E593D3"
+                      "sha256":  "9F0B2A61108CBCA36CFD09A8AF26FA7E535C83E81E262C4BD598C90EA8459F8D"
                   },
                   {
                       "path":  "references/prompts/sync.md",
-                      "sha256":  "B453F797A5E967EF60D089DD0227A15B0A4F8A6EDE014623046EA490B893A4DD"
+                      "sha256":  "56CF2DAB4D80287A9B9F8A81942957A13024E02967329D5409301258069D5047"
                   },
                   {
                       "path":  "references/prompts/verify.md",
-                      "sha256":  "7964B06C7A5F45579DBAD4BCA3D1FB065043C73BF7032908246C09EBC803A4DF"
+                      "sha256":  "2A874C6F6EF506BE41058CE0C7106835C209598C5EC641B8FB8DD53C1CC2BBA0"
                   },
                   {
                       "path":  "SKILL.md",
-                      "sha256":  "2433815248E1060ED6C41D8A7A5D721DB9CCB678A292B5ED19C9EFE366524460"
+                      "sha256":  "642D0F0A3786BBE0F7D87E3CD21D98712F264A0B695EB1E98E38AC4394A47028"
                   }
               ]
 }
