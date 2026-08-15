@@ -37,6 +37,7 @@ try {
   New-Item -ItemType Directory -Path $rules, $commands | Out-Null
   Set-Content (Join-Path $commands 'opsx-apply.md') 'old'
   Set-Content (Join-Path $commands 'opsx-new.md') 'old'
+  Set-Content (Join-Path $commands 'workflow-apply.md') 'generated'
   Set-Content (Join-Path $commands 'user-cmd.md') 'keep'
   New-Item -ItemType Directory -Path (Join-Path $rules 'superpowers-v6.1.1') | Out-Null
   Set-Content (Join-Path $rules 'superpowers-v6.1.1\superpowers-bootstrap.mdc') 'old'
@@ -45,6 +46,7 @@ try {
 
   Remove-WorkflowOwnedEntries -RulesRoot $rules -CommandsRoot $commands
   Assert-True (-not (Test-Path (Join-Path $commands 'opsx-apply.md'))) "removes opsx-apply"
+  Assert-True (-not (Test-Path (Join-Path $commands 'workflow-apply.md'))) "removes generated workflow-apply"
   Assert-True (Test-Path (Join-Path $commands 'user-cmd.md')) "keeps user command"
   Assert-True (-not (Test-Path (Join-Path $rules 'superpowers-v6.1.1'))) "removes superpowers rules dir"
   Assert-True (Test-Path (Join-Path $rules 'my-company.mdc')) "keeps user rule"
@@ -105,28 +107,30 @@ try {
 
   Install-WorkflowV2 -SourceRoot $repoRoot -TargetRoot $proj
   Assert-True (-not (Test-Path (Join-Path $proj '.cursor\skills\openspec-v1.5.0'))) "install purges legacy skills"
-  Assert-True (Test-Path (Join-Path $proj 'openspec\specs\keep-me\spec.md')) "preserves business specs"
+  Assert-True (Test-Path (Join-Path $proj '.workflow\specs\keep-me\spec.md')) "migrates and preserves business specs"
+  Assert-True (-not(Test-Path (Join-Path $proj 'openspec'))) "removes superseded openspec data root"
   Assert-True (Test-Path (Join-Path $proj '.workflow\pack\prompts\apply.md')) "installs neutral apply prompt"
   Assert-True (-not (Test-Path (Join-Path $proj '.cursor\workflow\pack'))) "removes superseded Cursor pack"
-  Assert-True (Test-Path (Join-Path $proj '.agents\skills\openspec-workflow\SKILL.md')) "installs Codex workflow skill"
-  Assert-True (Test-Path (Join-Path $proj '.agents\skills\openspec-workflow\references\prompts\apply.md')) "installs Codex apply prompt"
-  Assert-True (Test-Path (Join-Path $proj '.agents\skills\openspec-workflow\references\gates\acceptance.md')) "installs Codex acceptance contract"
+  Assert-True (Test-Path (Join-Path $proj '.agents\skills\workflow\SKILL.md')) "installs Codex workflow skill"
+  Assert-True (Test-Path (Join-Path $proj '.agents\skills\workflow\references\prompts\apply.md')) "installs Codex apply prompt"
+  Assert-True (Test-Path (Join-Path $proj '.agents\skills\workflow\references\gates\acceptance.md')) "installs Codex acceptance contract"
+  Assert-True (Test-Path (Join-Path $proj '.agents\skills\workflow\bin\workflow.ps1')) "installs repository-local workflow CLI"
   Assert-True (@(Get-ChildItem -LiteralPath (Join-Path $proj '.workflow\pack\gates') -File).Count -eq 1) "installs only the shared acceptance contract"
   foreach ($oldGate in @('tdd.md','debug.md','verify.md')) {
     Assert-True (-not (Test-Path (Join-Path $proj ".workflow\pack\gates\$oldGate"))) "removes superseded source gate $oldGate"
-    Assert-True (-not (Test-Path (Join-Path $proj ".agents\skills\openspec-workflow\references\gates\$oldGate"))) "removes superseded Codex gate $oldGate"
+    Assert-True (-not (Test-Path (Join-Path $proj ".agents\skills\workflow\references\gates\$oldGate"))) "removes superseded Codex gate $oldGate"
   }
   Assert-True (Test-Path (Join-Path $proj '.agents\rules\early-project.md')) "migrates project Cursor rule for Codex"
   $agents1 = Get-Content -Raw -Encoding utf8 (Join-Path $proj 'AGENTS.md')
   Assert-True ($agents1 -match 'Keep this custom guidance') "preserves project-owned AGENTS guidance"
   Assert-True ($agents1 -match 'BEGIN WORKFLOW MANAGED') "adds managed workflow guidance to AGENTS.md"
-  Assert-True ($agents1 -notmatch 'Bugs, test failures') "does not route unrelated debugging into OpenSpec"
+  Assert-True ($agents1 -notmatch 'Bugs, test failures') "does not route unrelated debugging into workflow"
   $applyContract = Get-Content -Raw -Encoding utf8 (Join-Path $proj '.workflow\pack\prompts\apply.md')
-  Assert-True ($applyContract -match '## Preconditions' -and $applyContract -match '## Outputs' -and $applyContract -match '## Acceptance' -and $applyContract -match '## Stop conditions') "apply is a delivery contract"
+  Assert-True ($applyContract -match '## Preconditions' -and $applyContract -match '## Outputs' -and $applyContract -match '## Acceptance' -and $applyContract -match '## Stop conditions') "apply is a lifecycle contract"
   Assert-True ($applyContract -notmatch 'RED|GREEN|REFACTOR|every 3 tasks') "apply does not prescribe generic implementation methods"
-  $schemaContract = Get-Content -Raw -Encoding utf8 (Join-Path $proj 'openspec\schemas\workflow-spec\schema.yaml')
-  Assert-True ($schemaContract -match 'This artifact is required because tasks depend on it') "schema makes change design unambiguously required"
-  Assert-True ($schemaContract -notmatch 'When to include design') "schema has no optional-design contradiction"
+  $schemaContract = Get-Content -Raw -Encoding utf8 (Join-Path $proj '.workflow\schemas\workflow-contract\schema.json') | ConvertFrom-Json
+  Assert-True ((@($schemaContract.artifacts|Where-Object{$_.id -eq 'design'}|Select-Object -First 1).required) -contains $true) "schema makes change design unambiguously required"
+  Assert-True ($schemaContract.name -eq 'workflow-contract') "schema resolves from repository-local workflow contract"
   Assert-True ($agents1 -match 'Read `\.agents/rules/early-project\.md` before any work \(always apply\)') "routes always-apply project rule"
   Assert-True ($agents1 -match 'src/deploy/\*\*/\*.*docs/deploy/\*\*/\*') "routes path-scoped project rule"
   Assert-True ($agents1 -notmatch '\$\(') "renders project rule metadata without PowerShell expressions"
@@ -151,11 +155,11 @@ try {
   Assert-True ($agents2 -match 'Keep this custom guidance') "reinstall still preserves project AGENTS guidance"
 
   # business capability must be paired for doctor; preserve both files across install
-  Set-Content (Join-Path $proj 'openspec\specs\keep-me\design.md') 'business design stays'
+  Set-Content (Join-Path $proj '.workflow\specs\keep-me\design.md') 'business design stays'
   $r2 = Invoke-WorkflowDoctor -ProjectRoot $proj
   if ($r2.ExitCode -ne 0) { $r2.Errors | ForEach-Object { Write-Host "  doctor: $_" } }
   Assert-True ($r2.ExitCode -eq 0) "doctor passes after install"
-  Assert-True (Test-Path (Join-Path $proj 'openspec\specs\keep-me\design.md')) "preserves business design"
+  Assert-True (Test-Path (Join-Path $proj '.workflow\specs\keep-me\design.md')) "preserves business design"
 
   $generatedRule = Join-Path $proj '.agents\rules\early-project.md'
   Set-Content -Encoding utf8 $generatedRule 'drifted'
@@ -173,11 +177,11 @@ try {
   Assert-True (-not (Test-Path (Join-Path $proj '.agents\workflow\state.json'))) "does not duplicate Codex state"
 
   # unpaired main spec → doctor fails
-  Remove-Item -Force (Join-Path $proj 'openspec\specs\keep-me\design.md')
+  Remove-Item -Force (Join-Path $proj '.workflow\specs\keep-me\design.md')
   $rPair = Invoke-WorkflowDoctor -ProjectRoot $proj
   Assert-True ($rPair.ExitCode -ne 0) "doctor fails when design.md missing"
   Assert-True (($rPair.Errors -join ' ') -match 'design\.md') "doctor mentions missing design.md"
-  Set-Content (Join-Path $proj 'openspec\specs\keep-me\design.md') 'business design stays'
+  Set-Content (Join-Path $proj '.workflow\specs\keep-me\design.md') 'business design stays'
 
   # Git Bash style paths must map to Windows drive roots
   Assert-True ((Resolve-WorkflowPath '/d/work/bill') -eq 'D:\work\bill') "maps /d/work/bill to D:\work\bill"
@@ -192,16 +196,16 @@ try {
   $projRules = Join-Path $cfgDir 'project-rules.yaml'
   $out1 = Join-Path $cfgDir 'out1.yaml'
   @(
-    'schema: workflow-spec',
+    'schema: workflow-contract',
     'rules:',
     '  proposal:',
     '    - Own Why only',
     '  specs:',
     '    - Both spec and design'
   ) | Set-Content -Encoding utf8 $wfOnly
-  Merge-WorkflowOpenSpecConfig -WorkflowPath $wfOnly -ProjectPath $null -OutPath $out1
+  Merge-WorkflowConfig -WorkflowPath $wfOnly -ProjectPath $null -OutPath $out1
   $o1 = Get-Content -Raw $out1
-  Assert-True ($o1 -match 'schema:\s*workflow-spec') "merge workflow-only keeps schema"
+  Assert-True ($o1 -match 'schema:\s*workflow-contract') "merge workflow-only keeps schema"
   Assert-True ($o1 -match 'Own Why only') "merge workflow-only keeps rules"
   Assert-True ($o1 -match 'AUTO-GENERATED|DO NOT EDIT') "merged file has generated banner"
 
@@ -215,7 +219,7 @@ try {
     '    - Project design rule'
   ) | Set-Content -Encoding utf8 $projRules
   $out2 = Join-Path $cfgDir 'out2.yaml'
-  Merge-WorkflowOpenSpecConfig -WorkflowPath $wfOnly -ProjectPath $projRules -OutPath $out2
+  Merge-WorkflowConfig -WorkflowPath $wfOnly -ProjectPath $projRules -OutPath $out2
   $o2 = Get-Content -Raw $out2
   Assert-True ($o2 -match 'schema:\s*custom-schema') "project schema overrides"
   Assert-True ($o2 -match 'Project private rule') "project rules appended"
@@ -231,70 +235,70 @@ try {
     '    - Keep my private rule forever'
   ) | Set-Content -Encoding utf8 (Join-Path $proj2 'openspec\config.yaml')
   Install-WorkflowV2 -SourceRoot $repoRoot -TargetRoot $proj2
-  Assert-True (Test-Path (Join-Path $proj2 'openspec\config.workflow.yaml')) "writes config.workflow.yaml"
-  Assert-True (Test-Path (Join-Path $proj2 'openspec\config.project.yaml')) "creates config.project.yaml via migrate"
-  $projCfg1 = Get-Content -Raw (Join-Path $proj2 'openspec\config.project.yaml')
+  Assert-True (Test-Path (Join-Path $proj2 '.workflow\config.workflow.yaml')) "writes config.workflow.yaml"
+  Assert-True (Test-Path (Join-Path $proj2 '.workflow\config.project.yaml')) "creates config.project.yaml via migrate"
+  $projCfg1 = Get-Content -Raw (Join-Path $proj2 '.workflow\config.project.yaml')
   Assert-True ($projCfg1 -match 'Keep my private rule forever') "migrated private rule into project file"
-  $merged1 = Get-Content -Raw (Join-Path $proj2 'openspec\config.yaml')
+  $merged1 = Get-Content -Raw (Join-Path $proj2 '.workflow\config.yaml')
   Assert-True ($merged1 -match 'Keep my private rule forever') "merged config includes private rule"
   Assert-True ($merged1 -notmatch 'Both spec|Own Why|create BOTH|Never leave') "merged config does not duplicate schema artifact contracts"
 
   @(
-    'schema: workflow-spec',
+    'schema: workflow-contract',
     'rules:',
     '  proposal:',
     '    - Keep my private rule forever',
     '    - Second private line'
-  ) | Set-Content -Encoding utf8 (Join-Path $proj2 'openspec\config.project.yaml')
+  ) | Set-Content -Encoding utf8 (Join-Path $proj2 '.workflow\config.project.yaml')
   Install-WorkflowV2 -SourceRoot $repoRoot -TargetRoot $proj2
-  $projCfg2 = Get-Content -Raw (Join-Path $proj2 'openspec\config.project.yaml')
+  $projCfg2 = Get-Content -Raw (Join-Path $proj2 '.workflow\config.project.yaml')
   Assert-True ($projCfg2 -match 'Second private line') "second install does not overwrite project config"
 
   # machine sync remains explicit; doctor only reports stale generated config
   @(
-    'schema: workflow-spec',
+    'schema: workflow-contract',
     'rules:',
     '  proposal:',
     '    - Keep my private rule forever',
     '    - DoctorAutoSyncRule'
-  ) | Set-Content -Encoding utf8 (Join-Path $proj2 'openspec\config.project.yaml')
+  ) | Set-Content -Encoding utf8 (Join-Path $proj2 '.workflow\config.project.yaml')
   @(
-    'schema: workflow-spec',
+    'schema: workflow-contract',
     'rules:',
     '  proposal:',
     '    - stale merged only'
-  ) | Set-Content -Encoding utf8 (Join-Path $proj2 'openspec\config.yaml')
-  $sync1 = Sync-WorkflowOpenSpecConfig -ProjectRoot $proj2
+  ) | Set-Content -Encoding utf8 (Join-Path $proj2 '.workflow\config.yaml')
+  $sync1 = Sync-WorkflowConfig -ProjectRoot $proj2
   Assert-True ($sync1.Changed -eq $true) "sync merges when project changed"
   Assert-True ($sync1.Status -eq 'Merged') "sync status Merged"
-  $healed = Get-Content -Raw (Join-Path $proj2 'openspec\config.yaml')
+  $healed = Get-Content -Raw (Join-Path $proj2 '.workflow\config.yaml')
   Assert-True ($healed -match 'DoctorAutoSyncRule') "sync writes project rule into config.yaml"
-  $sync2 = Sync-WorkflowOpenSpecConfig -ProjectRoot $proj2
+  $sync2 = Sync-WorkflowConfig -ProjectRoot $proj2
   Assert-True ($sync2.Changed -eq $false) "second sync is no-op when up to date"
   Assert-True ($sync2.Status -eq 'Unchanged') "sync status Unchanged"
 
   @(
-    'schema: workflow-spec',
+    'schema: workflow-contract',
     'rules:',
     '  proposal:',
     '    - Keep my private rule forever',
     '    - DoctorAutoSyncRule',
     '    - ViaDoctorRule'
-  ) | Set-Content -Encoding utf8 (Join-Path $proj2 'openspec\config.project.yaml')
+  ) | Set-Content -Encoding utf8 (Join-Path $proj2 '.workflow\config.project.yaml')
   @(
     '# stale',
-    'schema: workflow-spec',
+    'schema: workflow-contract',
     'rules:',
     '  proposal:',
     '    - Keep my private rule forever'
-  ) | Set-Content -Encoding utf8 (Join-Path $proj2 'openspec\config.yaml')
-  $beforeDocConfig = Get-Content -Raw (Join-Path $proj2 'openspec\config.yaml')
+  ) | Set-Content -Encoding utf8 (Join-Path $proj2 '.workflow\config.yaml')
+  $beforeDocConfig = Get-Content -Raw (Join-Path $proj2 '.workflow\config.yaml')
   $rDocSync = Invoke-WorkflowDoctor -ProjectRoot $proj2
   Assert-True ($rDocSync.ExitCode -ne 0) "doctor reports stale merged config"
-  $viaDoc = Get-Content -Raw (Join-Path $proj2 'openspec\config.yaml')
+  $viaDoc = Get-Content -Raw (Join-Path $proj2 '.workflow\config.yaml')
   Assert-True ($viaDoc -eq $beforeDocConfig) "doctor does not auto-sync project rules"
   Repair-WorkflowInstall -ProjectRoot $proj2
-  Assert-True ((Get-Content -Raw (Join-Path $proj2 'openspec\config.yaml')) -match 'ViaDoctorRule') "explicit repair syncs project rules"
+  Assert-True ((Get-Content -Raw (Join-Path $proj2 '.workflow\config.yaml')) -match 'ViaDoctorRule') "explicit repair syncs project rules"
 
   # reintroduce legacy → doctor fails
   New-Item -ItemType Directory -Force -Path (Join-Path $proj '.cursor\skills\superpowers-v9') | Out-Null
@@ -305,8 +309,8 @@ try {
   Assert-True (Test-Path (Join-Path $repoRoot '.workflow\pack\prompts\apply.md')) "neutral repo pack exists before self-init"
   Install-WorkflowV2 -SourceRoot $repoRoot -TargetRoot $repoRoot
   Assert-True (Test-Path (Join-Path $repoRoot '.workflow\pack\prompts\apply.md')) "self-init preserves neutral pack"
-  Assert-True (Test-Path (Join-Path $repoRoot '.cursor\commands\opsx-apply.md')) "self-init preserves opsx-apply"
-  Assert-True (Test-Path (Join-Path $repoRoot '.agents\skills\openspec-workflow\SKILL.md')) "self-init preserves Codex workflow skill"
+  Assert-True (Test-Path (Join-Path $repoRoot '.cursor\commands\workflow-apply.md')) "self-init preserves workflow-apply"
+  Assert-True (Test-Path (Join-Path $repoRoot '.agents\skills\workflow\SKILL.md')) "self-init preserves Codex workflow skill"
 
   $bad = Join-Path $tmp 'bad'
   New-Item -ItemType Directory -Force -Path (Join-Path $bad '.workflow') | Out-Null
@@ -332,8 +336,8 @@ try {
   Install-WorkflowV2 -SourceRoot $repoRoot -TargetRoot $codexOnly -Clients codex
   $cursorAfter = &$cursorFingerprint
   Assert-True ($cursorAfter -eq $cursorBefore) "Codex-only install leaves Cursor tree byte-for-byte unchanged"
-  Assert-True (Test-Path (Join-Path $codexOnly '.agents\skills\openspec-workflow\SKILL.md')) "Codex-only install creates Codex skill"
-  Assert-True (-not (Test-Path (Join-Path $codexOnly '.cursor\commands\opsx-apply.md'))) "Codex-only install does not create Cursor commands"
+  Assert-True (Test-Path (Join-Path $codexOnly '.agents\skills\workflow\SKILL.md')) "Codex-only install creates Codex skill"
+  Assert-True (-not (Test-Path (Join-Path $codexOnly '.cursor\commands\workflow-apply.md'))) "Codex-only install does not create Cursor commands"
   $codexMetadata = Get-Content -Raw (Join-Path $codexOnly '.workflow\version.json') | ConvertFrom-Json
   Assert-True ((@($codexMetadata.clients) -join ',') -eq 'codex') "Codex-only metadata records only Codex"
   Assert-True ((Invoke-WorkflowDoctor -ProjectRoot $codexOnly).ExitCode -eq 0) "Codex-only doctor ignores Cursor-private content"
@@ -355,19 +359,59 @@ try {
   Set-Content -Encoding utf8 (Join-Path $published 'scripts\doctor.ps1') 'Invoke-WorkflowDoctor'
   Set-Content -Encoding utf8 (Join-Path $published 'scripts\lib\WorkflowDeploy.psm1') 'WorkflowVersion'
   Publish-WorkflowCodexArtifact -SourceRoot $repoRoot -TargetRoot $published
-  Assert-True (-not(Test-Path (Join-Path $published '.workflow'))) "publication removes downstream neutral source"
+  Assert-True (Test-Path (Join-Path $published '.workflow')) "publication preserves downstream workflow project data"
+  Assert-True (-not(Test-Path (Join-Path $published '.workflow\pack'))) "publication removes source-only workflow pack"
+  Assert-True (-not(Test-Path (Join-Path $published '.workflow\cli'))) "publication removes source-only CLI source"
+  Assert-True (Test-Path (Join-Path $published '.workflow\schemas\workflow-contract\schema.json')) "publication includes workflow artifact contract"
+  Assert-True (-not(Test-Path (Join-Path $published 'openspec'))) "publication removes legacy OpenSpec project data root"
+  Assert-True (-not(Test-Path (Join-Path $published '.agents\skills\openspec-workflow'))) "publication removes legacy OpenSpec skill"
   Assert-True (-not(Test-Path (Join-Path $published '.agents\rules\.workflow-managed.json'))) "publication removes empty generated rule index"
   Assert-True (-not(Test-Path (Join-Path $published 'scripts\init.ps1'))) "publication removes deployment init source"
   Assert-True (-not(Test-Path (Join-Path $published 'scripts\doctor.ps1'))) "publication removes deployment doctor source"
   Assert-True (-not(Test-Path (Join-Path $published 'scripts\lib\WorkflowDeploy.psm1'))) "publication removes deployment module source"
   Assert-True (Test-Path (Join-Path $published '.agents\rules\private.md')) "publication preserves private rules"
   Assert-True (Test-Path (Join-Path $published '.agents\skills\private-skill\SKILL.md')) "publication preserves unrelated skills"
-  Assert-True (Test-Path (Join-Path $published '.agents\skills\openspec-workflow\artifact.json')) "publication includes artifact metadata"
+  Assert-True (Test-Path (Join-Path $published '.agents\skills\workflow\artifact.json')) "publication includes artifact metadata"
+  $publishedCli=Join-Path $published '.agents\skills\workflow\bin\workflow.ps1'
+  Assert-True (Test-Path $publishedCli) "publication includes repository-owned CLI"
+  $publishedRuntimeText=@(Get-ChildItem -LiteralPath (Join-Path $published '.agents\skills\workflow') -Recurse -File | ForEach-Object { Get-Content -LiteralPath $_.FullName -Raw }) -join "`n"
+  Assert-True ($publishedRuntimeText -notmatch '(?i)openspec|opsx|\bnpm\b|\bnpx\b') "published runtime contains no external lifecycle identity or package command"
+  Assert-True ($publishedRuntimeText -match '(?i)never install, download, discover, or invoke an external lifecycle CLI or package') "published runtime explicitly rejects external lifecycle dependencies"
+
+  # The published lifecycle works without npm, npx, or any external lifecycle CLI on PATH.
+  $savedPath=$env:PATH
+  try {
+    $env:PATH=''
+    $publishedDoctorResult=((& $publishedCli doctor --json -ProjectRoot $published) | Out-String | ConvertFrom-Json)
+    Assert-True ($publishedDoctorResult.valid -eq $true) "published local CLI doctor succeeds with empty PATH"
+    (& $publishedCli new cli-smoke --json -ProjectRoot $published) | Out-Null
+    $smokeRoot=Join-Path $published '.workflow\changes\cli-smoke'
+    Set-Content -Encoding utf8 (Join-Path $smokeRoot 'proposal.md') "# Proposal`n`n## Why`nSmoke.`n`n## What Changes`nLocal lifecycle.`n`n## Capabilities`n- workflow-smoke`n`n## Impact`nTest only.`n"
+    Set-Content -Encoding utf8 (Join-Path $smokeRoot 'design.md') "# Design`n`n## Context`nSmoke.`n`n## Goals / Non-Goals`n- Goal: verify local CLI.`n`n## Decisions`nUse local files.`n`n## Risks / Trade-offs`nNone.`n"
+    Set-Content -Encoding utf8 (Join-Path $smokeRoot 'tasks.md') "# Tasks`n`n- [x] 1.1 Verify local CLI lifecycle.`n"
+    $smokeSpecRoot=Join-Path $smokeRoot 'specs\workflow-smoke'
+    New-Item -ItemType Directory -Force -Path $smokeSpecRoot | Out-Null
+    Set-Content -Encoding utf8 (Join-Path $smokeSpecRoot 'spec.md') "# workflow-smoke Specification`n`n## ADDED Requirements`n`n### Requirement: Local smoke lifecycle`nThe system SHALL execute the repository-owned lifecycle.`n`n#### Scenario: Execute locally`n- **WHEN** the local CLI is invoked`n- **THEN** it completes without an external lifecycle package`n"
+    Set-Content -Encoding utf8 (Join-Path $smokeSpecRoot 'design.md') "# workflow-smoke Design`n`n## Context`nLocal smoke lifecycle.`n`n## Goals / Non-Goals`n- Goal: verify the local CLI.`n`n## Decisions`nUse repository files.`n`n## Risks / Trade-offs`nNone.`n"
+    $smokeStatus=((& $publishedCli status --change cli-smoke --json -ProjectRoot $published) | Out-String | ConvertFrom-Json)
+    Assert-True ($smokeStatus.applyReady -eq $true) "published local CLI reports complete change artifacts"
+    $smokeValidation=((& $publishedCli validate cli-smoke --json -ProjectRoot $published) | Out-String | ConvertFrom-Json)
+    Assert-True ($smokeValidation.valid -eq $true) "published local CLI validates change artifacts"
+    (& $publishedCli sync --change cli-smoke --json -ProjectRoot $published) | Out-Null
+    (& $publishedCli sync --change cli-smoke --json -ProjectRoot $published) | Out-Null
+    Assert-True (Test-Path (Join-Path $published '.workflow\specs\workflow-smoke\spec.md')) "published local CLI sync is repeatable"
+    $smokeArchive=((& $publishedCli archive cli-smoke --json -ProjectRoot $published) | Out-String | ConvertFrom-Json)
+    Assert-True ($smokeArchive.archived -eq $true) "published local CLI archives a complete change"
+    Assert-True (Test-Path (Join-Path $published '.workflow\specs\workflow-smoke\spec.md')) "published local CLI syncs the main specification"
+    Assert-True (@(Get-ChildItem -LiteralPath (Join-Path $published '.workflow\changes\archive') -Directory -Filter '*-cli-smoke').Count -eq 1) "published local CLI moves the change to archive"
+  } finally {
+    $env:PATH=$savedPath
+  }
   $doctorContract=Get-Content -Raw (Join-Path $repoRoot '.workflow\pack\prompts\doctor.md')
   Assert-True ($doctorContract -match 'check-deployment\.ps1') "doctor contract routes to source-owned checker"
   Assert-True ($doctorContract -notmatch 'pwsh -File scripts/doctor\.ps1') "doctor contract does not reference deleted downstream checker"
-  Assert-True ($doctorContract -match 'Do not expect or recreate `\.workflow`') "doctor contract preserves artifact-only boundary"
-  $publishedDoctor=Join-Path $published '.agents\skills\openspec-workflow\references\prompts\doctor.md'
+  Assert-True ($doctorContract -match 'source-only `\.workflow/pack`') "doctor contract distinguishes project data from source runtime"
+  $publishedDoctor=Join-Path $published '.agents\skills\workflow\references\prompts\doctor.md'
   $publishedDoctorBytes=[System.IO.File]::ReadAllBytes($publishedDoctor)
   $lfDoctor=New-Object System.IO.MemoryStream
   try {

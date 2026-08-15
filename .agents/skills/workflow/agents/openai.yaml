@@ -1,0 +1,4 @@
+interface:
+  display_name: "Workflow"
+  short_description: "Run the repository-owned workflow lifecycle safely"
+  default_prompt: "Use $workflow to continue the active change with the repository-local CLI."

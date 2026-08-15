@@ -1,6 +1,6 @@
 ﻿{
-    "version":  "4.0.2",
-    "schema":  "workflow-spec",
+    "version":  "5.0.0",
+    "schema":  "workflow-contract",
     "engine":  "powershell",
     "clients":  [
                     "cursor",

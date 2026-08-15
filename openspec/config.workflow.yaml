@@ -1,5 +1,0 @@
-schema: workflow-spec
-
-# Artifact contracts live in openspec/schemas/workflow-spec/schema.yaml.
-# This file only selects the workflow-owned schema; project rules merge from
-# config.project.yaml into the generated config.yaml.

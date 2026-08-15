@@ -1,34 +1,27 @@
-# Init 破坏性说明
+# 5.0 升级边界
 
-`scripts/init.ps1 -Yes` 会替换目标项目中的**工作流运行时**，不是合并安装。
+`scripts/init.ps1 -Yes` 会替换目标项目中 workflow-owned 的旧运行时，不提供旧命令或旧目录兼容层。
 
 ## 会做什么
 
-- 删除 `.cursor/skills` 下命名空间：`superpowers*`、`openspec*`、`grilling*`、`workflow*`
-- 删除并重装工作流入口：`opsx-*` 命令、已知旧工作流 rules 目录等
-- 覆盖 `openspec/config.workflow.yaml`，并重生成合并产物 `openspec/config.yaml`
-- **永不覆盖** `openspec/config.project.yaml`（项目私有 rules/schema）
-- 首次升级：若尚无 `config.project.yaml` 但已有 `config.yaml`，会把现有 `config.yaml` **改名**为 `config.project.yaml` 再合并
-- 安装 `.workflow/pack/`、`openspec/schemas/workflow-spec/`，并在 `.workflow/` 写唯一 version/manifest
-- 从 `.workflow/mcp.json` 和 `.workflow/rules.json` 生成 Cursor/Codex 适配产物
-- 安装 `.agents/skills/openspec-workflow/` 及其生成 references
-- 删除旧的 workflow-owned `tdd.md`、`debug.md`、`verify.md` gates，安装 `acceptance.md`；需要固定方法的项目应改由项目规则声明
-- 更新 `AGENTS.md` 中标记的 workflow managed block；块外项目内容保持不变
-- 只清理各客户端 `.workflow-managed.json` 记录的旧规则产物；不宽泛删除未受管文件
-- 更新 `.codex/config.toml` 中标记的 MCP managed block；块外 TOML 保持不变
+- 安装 `.agents/skills/workflow/`，其中包含本地 CLI、references 和元数据。
+- 生成 `/workflow:*` Cursor 入口与 Codex managed guidance。
+- 安装 `.workflow/schemas/workflow-contract/` 和 workflow 默认配置。
+- 保留 `.workflow/config.project.yaml`，重建 `.workflow/config.yaml`。
+- 将旧生命周期目录中的 changes、specs 和项目配置迁入 `.workflow` 后删除旧运行时命名空间。
+- 更新标记过的 AGENTS 与 Codex TOML managed block。
+- 删除 workflow-owned 的旧方法 gates 和旧部署脚本。
 
 ## 不会做什么
 
-- 不删除业务规格 `openspec/specs/**`
-- 不删除命名空间之外的用户自有 skills / rules / commands
-- 不覆盖 `openspec/config.project.yaml`
-- 不覆盖 `AGENTS.md` / `.codex/config.toml` 的 managed block 之外内容
-
-`doctor.ps1` 默认不写文件；显式 `-Fix` 才修复生成产物。
-## 用法
+- 不删除项目 changes、业务 specs 或私有配置。
+- 不删除无关 skills、rules、commands。
+- 不修改 managed block 之外的 `AGENTS.md` 与 `.codex/config.toml` 内容。
+- 不安装、下载或调用外部生命周期 CLI/package。
+- 不向下游复制源码专用 `.workflow/pack` 或 `.workflow/cli`。
 
 ```powershell
 pwsh -File path\to\workflow\scripts\init.ps1 -Target . -Yes
 ```
 
-若仍存在上述工作流 skill 残留，`doctor.ps1` 会失败。
+升级后使用 `scripts/doctor.ps1` 检查源码部署，或使用 `.agents/skills/workflow/bin/workflow.ps1 doctor` 检查发布态运行时。

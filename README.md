@@ -1,87 +1,65 @@
 # Workflow
 
-面向 Cursor 与 Codex 的 OpenSpec 流程工具包：双客户端入口、自定义 schema、生命周期交付契约，以及基于证据的验收。
+面向 Cursor 与 Codex 的自包含变更工作流。它定义生命周期规则、每一步的产物、验收条件和授权边界；不依赖外部生命周期 CLI 或 npm 包，也不规定 agent 的通用实现方法。
 
 ## 安装到项目
-
-需要 `-Yes`（会覆盖工作流入口与 `openspec/config.workflow.yaml`，并重生成合并后的 `config.yaml`；**不**覆盖 `config.project.yaml`）。说明见 [docs/BREAKING.md](docs/BREAKING.md)。
 
 ```powershell
 pwsh -File scripts/init.ps1 -Target D:\work\your-project -Yes
 pwsh -File scripts/doctor.ps1 -ProjectRoot D:\work\your-project
 ```
 
-也支持 Git Bash 风格路径（会规范成 Windows 路径），例如 `-Target /d/work/your-project` → `D:\work\your-project`。
+`init` 会更新 workflow-owned 入口和 `.workflow/config.workflow.yaml`，保留 `.workflow/config.project.yaml` 与项目自有内容。破坏性边界见 [docs/BREAKING.md](docs/BREAKING.md)。
 
-## 目录要点
+## 目录
 
 | 路径 | 作用 |
-|------|------|
-| `.workflow/pack/` | 平台无关 prompts + gates（唯一 SSOT） |
-| `.workflow/mcp.json` | 平台无关 MCP 定义，生成 Cursor/Codex 配置 |
-| `.workflow/rules.json` · `.workflow/rules/` | 项目规则元数据与正文 SSOT |
-| `.workflow/version.json` · `manifest.json` · `state.json` | 单一元数据与状态权威 |
-| `openspec/schemas/workflow-spec/` | 默认 schema |
-| `openspec/config.workflow.yaml` | 工作流 schema 选择器（init 可覆盖） |
-| `openspec/config.project.yaml` | 项目私有规则（init **永不**覆盖） |
-| `openspec/config.yaml` | 合并产物（`init` 或 `doctor -Fix` 生成，勿手改） |
-| `.cursor/rules/workflow-router.mdc` | 唯一 alwaysApply 路由 |
-| `.cursor/commands/opsx-*.md` | Cursor 命令 |
-| `AGENTS.md` 的 workflow managed block | Codex 持久路由；保留块外项目内容 |
-| `.agents/skills/openspec-workflow/` | Codex workflow skill 与按需 references |
-| `.cursor/rules/` · `.agents/rules/` | 从中立规则源生成的客户端适配产物 |
-| `.cursor/mcp.json` · `.codex/config.toml` managed block | 从中立 MCP 源生成的客户端适配产物 |
-| `scripts/init.ps1` · `doctor.ps1` | 部署与健康检查 |
+|---|---|
+| `.workflow/pack/` | 平台无关的生命周期与验收契约（源码仓库 SSOT） |
+| `.workflow/cli/` | 仓库自带 CLI 源码（源码仓库） |
+| `.workflow/schemas/workflow-contract/` | 本地 artifact contract 与模板 |
+| `.workflow/changes/` · `.workflow/specs/` | change 与主规格数据 |
+| `.workflow/config.workflow.yaml` | 工作流默认配置，部署时可更新 |
+| `.workflow/config.project.yaml` | 项目私有配置，部署不覆盖 |
+| `.workflow/config.yaml` | 前两者的生成结果，勿手改 |
+| `.agents/skills/workflow/` | Codex 唯一发布运行时，内含 CLI、references 和元数据 |
+| `.cursor/commands/workflow-*.md` | Cursor 生命周期入口 |
+| `AGENTS.md` managed block | Codex 持久路由；保留块外内容 |
 
-## 命令怎么用
+workflow 源码仓库同时保留 `.workflow` 真相源和 `.agents/skills/workflow` 生成物，用生成物自我迭代。下游只接收 `.agents/skills/workflow` 这一份运行时，以及 `.workflow` 下的项目数据、配置与 schema；不会接收源码专用的 `pack` 或 `cli`。
 
-在 Cursor 里输入 `/opsx:…`，或在 Codex 里使用 `$openspec-workflow`、旧命令别名及同等自然语言意图。两端均由 `.workflow/` 的中立源确定性生成。
+## 使用
 
-### 推荐次序（一条变更）
+Cursor 使用 `/workflow:<operation>`；Codex 使用 `$workflow <operation>`，自然语言表达同等生命周期意图也可以。
+
+常见顺序：
 
 ```text
-explore（可选）
-    → new  或  ff
-    → continue（缺啥补啥，可多次）
-    → grill（可选）
-    → apply
-    → verify
-    → sync（若要把 delta 合进主规格；也可留给 archive）
-    → archive
+explore（可选） → new 或 ff → continue → grill（可选）
+→ apply → verify → sync（可选，archive 也会同步） → archive
 ```
 
-旁路：随时 `/opsx:doctor` 做健康检查。仅活跃 OpenSpec 操作中的失败继续由该操作契约处理；普通 bug 和测试失败不自动进入 OpenSpec 工作流。
+| 操作 | 产物或结果 |
+|---|---|
+| `explore` | 澄清问题与方案；默认不创建 change |
+| `new` | 创建 change 与分支，开始逐步产出 artifacts |
+| `ff` | 一次生成 apply 所需 artifacts |
+| `continue` | 只推进下一个未完成 artifact |
+| `grill` | 审查设计，可写 `review-notes.md` |
+| `apply` | 按 artifacts 实现并记录完成证据 |
+| `verify` | 对照规格给出 pass/fail 与剩余缺口，不归档 |
+| `sync` | 将 delta 同步到 `.workflow/specs/` |
+| `archive` | 校验、同步并归档 change；合并仍需单独授权 |
+| `doctor` | 只读检查安装、schema、配对与漂移 |
 
-| 命令 | 作用 | 怎么用 |
-|------|------|--------|
-| `/opsx:explore` | 想清楚问题与方案，**默认不写代码、不建 change** | 有模糊需求时先用；结束后再 `new`/`ff` |
-| `/opsx:new` | 新建 change，按 schema 逐步写 proposal → … | 已知要开变更；会建分支 `change/<name>` |
-| `/opsx:ff` | 一口气写齐 apply 所需产物 | 目标清晰、想少来回时用；写完再决定 grill 或 apply |
-| `/opsx:continue` | 只推进**下一个**未完成产物 | `new`/`ff` 中断后续用；可反复调用 |
-| `/opsx:grill` | 审查设计并记录 `review-notes.md` | 设计争议大时用；**默认不阻断** apply |
-| `/opsx:apply` | 按 artifacts 实现并提供完成证据 | 产物齐套后使用；具体方法由 agent 按项目规则与风险选择 |
-| `/opsx:verify` | 对照规格检查实现，**不归档** | apply 告一段落后用；给出 pass/fail 与缺口 |
-| `/opsx:sync` | 把 change 里的 delta 同步到 `openspec/specs/`（必须 `spec.md`+`design.md`） | 需要主库先更新、或 archive 前补配对时用 |
-| `/opsx:archive` | 归档 change，并确保主规格成对；然后询问 merge/PR/保留/丢弃 | verify 通过（或你接受残留）后收尾 |
-| `/opsx:doctor` | 跑 `scripts/doctor.ps1`：布局、schema、配对、残留技能等 | 安装后、同步/归档后、或怀疑部署损坏时 |
+本地 CLI 的机器接口位于 `.agents/skills/workflow/bin/workflow.ps1`，支持 `new`、`status`、`instructions`、`validate`、`sync`、`archive` 和 `doctor`。不得为运行本工作流安装或下载外部生命周期工具。
 
-Doctor 默认只读；使用 `scripts/doctor.ps1 -Fix` 才会重新生成 workflow-owned 产物，然后再次严格检查。
-
-说明：
-
-- **`new` vs `ff`**：要分步讨论选 `new`+`continue`；要一次齐套选 `ff`。
-- **`sync` vs `archive`**：`archive` 常会顺带更新主规格；若 CLI 只写出了 `spec.md`，仍须按 sync/archive prompt **补 `design.md`**，且 doctor 会查配对。
-- 自然语言「开始写代码 / 实现吧」通常等价于 **apply**（见 router）。
-- Shared workflow 不规定 TDD、调试步骤、测试频率或重试次数；项目如需这些方法，应在项目规则中按适用范围声明。
-
-## 测试
+## 验证
 
 ```powershell
-powershell -NoProfile -File scripts/tests/WorkflowDeploy.Tests.ps1
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/tests/WorkflowDeploy.Tests.ps1
 ```
 
-## 文档
-
-- [docs/architecture.md](docs/architecture.md) — 架构与运行时契约  
-- [docs/ssot.md](docs/ssot.md) — 产物单一事实来源  
-- [docs/BREAKING.md](docs/BREAKING.md) — init 破坏性说明  
+- [架构](docs/architecture.md)
+- [单一事实来源](docs/ssot.md)
+- [升级边界](docs/BREAKING.md)

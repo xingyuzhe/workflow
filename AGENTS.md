@@ -1,13 +1,14 @@
 ﻿# Repository guidance
 
 <!-- BEGIN WORKFLOW MANAGED -->
-## OpenSpec workflow
+## Workflow
 
-Use `$openspec-workflow` for explicit OpenSpec lifecycle work. Treat `/opsx:name`, `/opsx-name`, `$openspec-workflow name`, and equivalent lifecycle intent as aliases.
+Use `$workflow` for explicit workflow lifecycle work. Treat `/workflow:name`, `/workflow-name`, `$workflow name`, and equivalent lifecycle intent as aliases.
 
 Route operations as follows: `explore`, `new`, `ff`, `continue`, `grill`, `apply`, `verify`, `sync`, `archive`, and `doctor`. Failures remain in this workflow only when they occur within an active lifecycle operation.
 
-- Treat `openspec/config.yaml` as generated from `openspec/config.workflow.yaml` and `openspec/config.project.yaml`; do not hand-edit it.
-- Reconcile `.workflow/state.json` with `openspec status`; CLI output wins and missing local state never blocks work.
+- Treat `.workflow/config.yaml` as generated from `.workflow/config.workflow.yaml` and `.workflow/config.project.yaml`; do not hand-edit it.
+- Use `.agents/skills/workflow/bin/workflow.ps1` for lifecycle state and validation. Repository files are authoritative.
+- Never install, download, discover, or invoke an external lifecycle CLI or package. A missing local CLI is an invalid workflow installation.
 - Preserve unrelated user changes. Do not merge, push, open a PR, discard a branch, or archive without the authorization required by the workflow.
 <!-- END WORKFLOW MANAGED -->

@@ -1,3 +1,0 @@
-# Project-private OpenSpec config. Init never overwrites this file.
-# Edit this file; doctor/init auto-sync merges into config.yaml.
-rules: {}

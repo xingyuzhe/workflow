@@ -1,0 +1,38 @@
+{
+  "name": "workflow-contract",
+  "version": 1,
+  "artifacts": [
+    {
+      "id": "proposal",
+      "path": "proposal.md",
+      "required": true,
+      "requires": [],
+      "template": "templates/proposal.md",
+      "instruction": "Define motivation, scoped changes, exact capability names, impact, and non-goals."
+    },
+    {
+      "id": "specs",
+      "path": "specs/",
+      "required": false,
+      "requires": ["proposal"],
+      "template": "templates/spec.md",
+      "instruction": "Create complete specs/<capability>/{spec.md,design.md} pairs with verifiable requirements and module ownership."
+    },
+    {
+      "id": "design",
+      "path": "design.md",
+      "required": true,
+      "requires": ["proposal"],
+      "template": "templates/design.md",
+      "instruction": "Record cross-cutting context, goals, non-goals, decisions, and trade-offs."
+    },
+    {
+      "id": "tasks",
+      "path": "tasks.md",
+      "required": true,
+      "requires": ["proposal", "design"],
+      "template": "templates/tasks.md",
+      "instruction": "Create an ordered checklist using exactly '- [ ] X.Y description'."
+    }
+  ]
+}

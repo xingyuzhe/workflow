@@ -1,9 +1,9 @@
 ﻿---
-description: Route OpenSpec lifecycle requests to the shared workflow pack
+description: Route repository workflow lifecycle requests to the shared workflow pack
 globs:
 alwaysApply: true
 ---
 
 # Workflow router
 
-For explicit OpenSpec lifecycle intent, load the matching contract from `.workflow/pack/prompts/` and any contract it references.
+For explicit workflow lifecycle intent, load the matching contract from `.workflow/pack/prompts/` and any contract it references. Use only the repository-local workflow CLI and never install an external lifecycle package.

@@ -1,0 +1,5 @@
+schema: workflow-contract
+
+# Artifact contracts live in .workflow/schemas/workflow-contract/schema.json.
+# This file only selects the workflow-owned schema; project rules merge from
+# config.project.yaml into the generated config.yaml.
