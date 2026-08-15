@@ -1,14 +1,14 @@
 # Module responsibility
 
-`deploy-kit` owns deterministic construction, publication, migration cleanup, and integrity checking of the self-contained workflow runtime.
+`deploy-kit` owns safe full installation, artifact-only publication, rollback snapshots, exact ownership, strict JSON configuration, and consistent integrity orchestration.
 
 # Structure and interfaces
 
-- Build copies neutral contracts and source CLI into `.agents/skills/workflow`.
-- Publish copies that single runtime and installs `.workflow` project data/config/schema paths.
-- Manifest validation covers the CLI, module, contracts, and metadata.
-- Migration moves project changes/specs before removing old workflow-owned paths.
+- Preflight functions are read-only and run before target mutation.
+- Target snapshots cover workflow-owned paths touched by each mode and restore them on caught failures.
+- Full installation supplies Cursor contracts and Codex adapters; artifact publication supplies only the built Codex runtime plus project data/schema.
+- Source and Artifact Doctors delegate local health to the validated repository runtime, then add source-equivalence checks.
 
 # Relationships
 
-The source repository owns `.workflow/pack` and `.workflow/cli`; downstream repositories own `.workflow/changes`, `.workflow/specs`, and project configuration.
+`workflow-cli` owns selected-schema and main-spec validity. `deploy-kit` owns source/generated equivalence and target mutation safety.

@@ -1,17 +1,11 @@
 # Module responsibility
 
-`schema-pack` owns the local artifact graph, templates, and syntax validation consumed by the repository-owned CLI.
+`schema-pack` owns explicit artifact semantics in addition to dependency and template metadata.
 
 # Structure and interfaces
 
-```text
-.workflow/schemas/workflow-contract/
-├── schema.json
-└── templates/
-```
-
-JSON holds machine-readable dependencies and template paths. Markdown templates remain human-readable and agent-editable.
+Schema artifacts declare `kind`; capability delta artifacts declare `publishPath`. Both paths are repository-relative and validated before use.
 
 # Relationships
 
-`workflow-cli` is the only runtime consumer. No external schema registry participates.
+The CLI consumes roles uniformly across status, validation, sync, and archive. Deployment preserves project-owned schemas and validates the schema selected by project configuration.
