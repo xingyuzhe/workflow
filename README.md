@@ -9,7 +9,7 @@ pwsh -File scripts/deploy.ps1 -Target D:\work\your-project -Yes
 pwsh -File scripts/check-deployment.ps1 -Target D:\work\your-project
 ```
 
-`deploy` 只发布 Codex 运行时 `.agents/skills/workflow`，并安装项目使用的 JSON 配置与 schema。它不会把源码专用的 `pack`、`cli` 或部署脚本复制到下游。
+`deploy` 只发布 Codex 运行时 `.agents/skills/workflow`，并安装项目使用的 JSON 配置与 schema。它会把受支持的旧项目数据收敛到 `.workflow`，选择性删除可证明属于旧工作流的 Cursor 文件；私有与当前 Cursor 内容保持不变。它不会把源码专用的 `pack`、`cli` 或部署脚本复制到下游。需要机器可读的迁移证据时增加 `-Json`。
 
 只有需要同时安装 Cursor 与 Codex、并保留完整源码布局时，才使用完整安装：
 

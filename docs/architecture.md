@@ -1,6 +1,6 @@
 # Workflow 架构
 
-当前版本：`6.1.0`。Workflow 是完全自定义、自包含的生命周期系统，只规定规则、产物、验收和授权边界。
+当前版本：`6.2.0`。Workflow 是完全自定义、自包含的生命周期系统，只规定规则、产物、验收和授权边界。
 
 ## 两层结构
 
@@ -47,10 +47,12 @@ Cursor 获得 `/workflow:*` 命令与 router；Codex 获得 `$workflow` skill、
 
 `scripts/build.ps1` 从真相源重建 `.agents/skills/workflow`。
 
-- `scripts/deploy.ps1` 是标准 Codex 下游发布：复制构建后的 skill，并安装项目使用的 `.workflow` 配置与 schema。源码专用的 `.workflow/pack`、`.workflow/cli`、默认规则、MCP 输入和部署脚本不发布。
+- `scripts/deploy.ps1` 是标准 Codex 下游发布：复制构建后的 skill，安装项目使用的 `.workflow` 配置与 schema，并在同一事务边界内迁移受支持的旧项目数据。源码专用的 `.workflow/pack`、`.workflow/cli`、默认规则、MCP 输入和部署脚本不发布。`-Json` 返回排序后的迁移、删除、保留、阻塞路径以及 Doctor 结果。
 - `scripts/init.ps1` 是完整 Cursor+Codex 安装：复制源码布局、部署脚本和两个客户端适配器，适合工作流源码仓库或确实需要 Cursor 的项目。
 
 两种模式都必须保留项目已有 changes、specs、私有配置、项目规则、项目 MCP 配置和其他 skills。
+
+标准 Codex 发布只清理能明确证明归属的旧文件：旧项目数据根、旧 Codex skill、旧 Cursor workflow namespace、固定的 `opsx-*` 入口，以及带旧路由标记的 router。当前 `/workflow:*` 入口、私有命令、rules、skills 和 Cursor MCP 不在清理范围内。旧根设计迁移到 `.workflow/design.md`；设计冲突会在任何写入前阻塞发布。
 
 源码 Doctor 检查源与生成物一致性。发布态 CLI 的 `doctor` 检查本地 schema、spec/design 配对、旧命名空间、本地 CLI 完整性与生命周期事务残留。两者都不通过下载依赖来“修复”环境。
 

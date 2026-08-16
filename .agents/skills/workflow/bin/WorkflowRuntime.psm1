@@ -1,5 +1,24 @@
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
+$script:WorkflowLegacyOpsxCommands = @(
+  'opsx-apply.md',
+  'opsx-archive.md',
+  'opsx-continue.md',
+  'opsx-doctor.md',
+  'opsx-explore.md',
+  'opsx-ff.md',
+  'opsx-grill.md',
+  'opsx-new.md',
+  'opsx-sync.md',
+  'opsx-verify.md'
+)
+$script:WorkflowLegacyRouterMarkers = @(
+  '$openspec-workflow',
+  '/opsx:',
+  '/opsx-',
+  'OpenSpec workflow',
+  'openspec status'
+)
 
 function Resolve-RepositoryWorkflowRoot {
   param([Parameter(Mandatory)][string]$Path)
@@ -716,6 +735,44 @@ function Get-WorkflowArtifactIntegrityErrors {
   return $errors.ToArray()
 }
 
+function Get-WorkflowRepositoryRelativePath {
+  param([Parameter(Mandatory)][string]$ProjectRoot,[Parameter(Mandatory)][string]$Path)
+  $root=[IO.Path]::GetFullPath($ProjectRoot).TrimEnd([char[]]@('\','/'))
+  $full=[IO.Path]::GetFullPath($Path)
+  $prefix=$root+[IO.Path]::DirectorySeparatorChar
+  if(-not $full.StartsWith($prefix,[StringComparison]::OrdinalIgnoreCase)){throw "path escapes project root: $full"}
+  return $full.Substring($prefix.Length).Replace('\','/')
+}
+
+function Test-WorkflowLegacyRouter {
+  param([Parameter(Mandatory)][string]$Path)
+  if(-not(Test-Path -LiteralPath $Path -PathType Leaf)){return $false}
+  $text=Read-WorkflowText $Path
+  foreach($marker in $script:WorkflowLegacyRouterMarkers){if($text.IndexOf($marker,[StringComparison]::OrdinalIgnoreCase)-ge 0){return $true}}
+  return $false
+}
+
+function Get-WorkflowLegacyResidueErrors {
+  param([Parameter(Mandatory)][string]$ProjectRoot)
+  $errors=New-Object System.Collections.Generic.List[string]
+  foreach($relative in @('openspec','.agents/skills/openspec-workflow','.cursor/workflow')){
+    if(Test-Path -LiteralPath (Join-Path $ProjectRoot $relative)){$errors.Add("superseded workflow path present: $relative")}
+  }
+  $changes=Join-Path $ProjectRoot '.workflow/changes'
+  if(Test-Path -LiteralPath $changes -PathType Container){
+    foreach($file in @(Get-ChildItem -LiteralPath $changes -Recurse -Force -File -ErrorAction SilentlyContinue|Where-Object{$_.Name -eq '.openspec.yaml'})){
+      $errors.Add("legacy workflow metadata present: $(Get-WorkflowRepositoryRelativePath $ProjectRoot $file.FullName)")
+    }
+  }
+  foreach($name in $script:WorkflowLegacyOpsxCommands){
+    $relative=".cursor/commands/$name"
+    if(Test-Path -LiteralPath (Join-Path $ProjectRoot $relative)){$errors.Add("superseded workflow path present: $relative")}
+  }
+  $routerRelative='.cursor/rules/workflow-router.mdc'
+  if(Test-WorkflowLegacyRouter (Join-Path $ProjectRoot $routerRelative)){$errors.Add("superseded workflow path present: $routerRelative")}
+  return $errors.ToArray()
+}
+
 function Invoke-RepositoryWorkflow {
   param([Parameter(Mandatory)][string]$Command,[string[]]$Arguments=@(),[Parameter(Mandatory)][string]$ProjectRoot)
   $root=Resolve-RepositoryWorkflowRoot $ProjectRoot;$json=Test-WorkflowSwitch $Arguments '--json';$change=Get-WorkflowOption $Arguments '--change'
@@ -749,6 +806,7 @@ function Invoke-RepositoryWorkflow {
       $errors=New-Object System.Collections.Generic.List[string];try{$null=Get-WorkflowSchema $root}catch{$errors.Add($_.Exception.Message)};foreach($e in @(Get-WorkflowPairErrors (Join-Path $root '.workflow/specs'))){$errors.Add($e)}
       foreach($file in @(Get-ChildItem -LiteralPath (Join-Path $root '.workflow/specs') -Filter 'spec.md' -Recurse -File -ErrorAction SilentlyContinue)){foreach($e in @(Test-WorkflowSpecText $file.FullName)){$errors.Add($e)}}
       foreach($e in @(Get-WorkflowArtifactIntegrityErrors $root)){$errors.Add($e)}
+      foreach($e in @(Get-WorkflowLegacyResidueErrors $root)){$errors.Add($e)}
       foreach($e in @(Get-WorkflowTransactionDiagnosticErrors $root)){$errors.Add($e)}
       $value=[pscustomobject]@{Valid=($errors.Count -eq 0);Errors=$errors.ToArray();Root=$root};if(-not $value.Valid -and -not $json){throw ($value.Errors -join "`n")}
     }

@@ -1,10 +1,29 @@
 # WorkflowDeploy.psm1 — platform-neutral workflow deployment
 
-$script:WorkflowVersion = '6.1.0'
+$script:WorkflowVersion = '6.2.0'
 $script:WorkflowAgentsStart = '<!-- BEGIN WORKFLOW MANAGED -->'
 $script:WorkflowAgentsEnd = '<!-- END WORKFLOW MANAGED -->'
 $script:WorkflowCodexConfigStart = '# BEGIN WORKFLOW MANAGED MCP'
 $script:WorkflowCodexConfigEnd = '# END WORKFLOW MANAGED MCP'
+$script:WorkflowLegacyOpsxCommands = @(
+  'opsx-apply.md',
+  'opsx-archive.md',
+  'opsx-continue.md',
+  'opsx-doctor.md',
+  'opsx-explore.md',
+  'opsx-ff.md',
+  'opsx-grill.md',
+  'opsx-new.md',
+  'opsx-sync.md',
+  'opsx-verify.md'
+)
+$script:WorkflowLegacyRouterMarkers = @(
+  '$openspec-workflow',
+  '/opsx:',
+  '/opsx-',
+  'OpenSpec workflow',
+  'openspec status'
+)
 
 function Resolve-WorkflowClients {
   param([string[]]$Clients = @('cursor', 'codex'))
@@ -615,10 +634,10 @@ function Install-Workflow {
   Test-WorkflowMutationPreflight -SourceRoot $SourceRoot -TargetRoot $TargetRoot -Clients $Clients -FullInstall
   $targetCreated=$false
   $snapshot=$null
-  if(-not $self){$snapshotPaths=@('.workflow','openspec','AGENTS.md','scripts/init.ps1','scripts/doctor.ps1','scripts/lib/WorkflowDeploy.psm1');if($Clients -contains 'cursor'){$snapshotPaths+='.cursor'};if($Clients -contains 'codex'){$snapshotPaths+=@('.agents/skills/workflow','.agents/rules','.agents/workflow','.codex/config.toml')};$snapshot=New-WorkflowTargetSnapshot -TargetRoot $TargetRoot -RelativePaths $snapshotPaths}
+  if(-not $self){$snapshotPaths=@('.workflow','openspec','AGENTS.md','scripts/init.ps1','scripts/doctor.ps1','scripts/lib/WorkflowDeploy.psm1');if($Clients -contains 'cursor'){$snapshotPaths+='.cursor'}elseif($Clients -contains 'codex'){$snapshotPaths+=@('.cursor/workflow','.cursor/rules/workflow-router.mdc')+@($script:WorkflowLegacyOpsxCommands|ForEach-Object{".cursor/commands/$_"})};if($Clients -contains 'codex'){$snapshotPaths+=@('.agents/skills/workflow','.agents/skills/openspec-workflow','.agents/rules','.agents/workflow','.codex/config.toml')};$snapshot=New-WorkflowTargetSnapshot -TargetRoot $TargetRoot -RelativePaths $snapshotPaths}
   try {
     if(-not $targetExisted){New-Item -ItemType Directory -Force -Path $TargetRoot -ErrorAction Stop|Out-Null;$targetCreated=$true}
-    if(-not $self){Move-WorkflowLegacyProjectData $TargetRoot}
+    if(-not $self){Move-WorkflowLegacyProjectData $TargetRoot;if($Clients -contains 'codex'){Remove-WorkflowLegacyCursorRuntime $TargetRoot;Remove-WorkflowLegacyCodexRuntime $TargetRoot}}
     if($Clients -contains 'cursor'){Remove-WorkflowNamespaceSkills -SkillsRoot (Join-Path $TargetRoot '.cursor/skills')}
     if (-not $self) {
       Copy-WorkflowTree -Source (Join-Path $SourceRoot '.workflow/pack') -Destination (Join-Path $TargetRoot '.workflow/pack')
@@ -726,6 +745,7 @@ function Invoke-WorkflowDoctor {
     if(-not(Test-Path -LiteralPath (Join-Path $gateRoot 'acceptance.md') -PathType Leaf)){$errors.Add('missing contract: .workflow/pack/gates/acceptance.md')}
     foreach($oldGate in @('tdd.md','debug.md','verify.md')){if(Test-Path -LiteralPath (Join-Path $gateRoot $oldGate)){$errors.Add("superseded method gate present: .workflow/pack/gates/$oldGate")}}
   } catch {$errors.Add("canonical source invalid: $($_.Exception.Message)")}
+  foreach($e in @(Get-WorkflowLegacyResidueErrors $ProjectRoot)){$errors.Add($e)}
   $required=@('.workflow/version.json','.workflow/manifest.json');if($Clients -contains 'codex'){$required+=@('.agents/skills/workflow/SKILL.md','.agents/skills/workflow/agents/openai.yaml','.agents/skills/workflow/bin/workflow.ps1','.agents/skills/workflow/bin/WorkflowRuntime.psm1')}
   foreach($rel in $required){if(-not(Test-Path -LiteralPath (Join-Path $ProjectRoot $rel) -PathType Leaf)){$errors.Add("missing: $rel")}}
   foreach($rel in @('.workflow/version.json','.workflow/manifest.json')){try{$meta=Read-WorkflowJsonFile (Join-Path $ProjectRoot $rel);if($meta.version -ne $script:WorkflowVersion){$errors.Add("metadata version drift: $rel")}}catch{$errors.Add("invalid metadata: $rel - $($_.Exception.Message)")}}
@@ -882,6 +902,142 @@ function Install-WorkflowSelectedSchema {
   Copy-WorkflowTree (Join-Path $SourceRoot ".workflow/schemas/$($workflow.Schema)") (Join-Path $TargetRoot ".workflow/schemas/$($workflow.Schema)")
 }
 
+function Get-WorkflowRepositoryRelativePath {
+  param([Parameter(Mandatory)][string]$ProjectRoot,[Parameter(Mandatory)][string]$Path)
+  $root=[IO.Path]::GetFullPath($ProjectRoot).TrimEnd('\','/')
+  $full=[IO.Path]::GetFullPath($Path)
+  $prefix=$root+[IO.Path]::DirectorySeparatorChar
+  if(-not $full.StartsWith($prefix,[StringComparison]::OrdinalIgnoreCase)){throw "path escapes project root: $full"}
+  return $full.Substring($prefix.Length).Replace('\','/')
+}
+
+function Test-WorkflowLegacyRouter {
+  param([Parameter(Mandatory)][string]$Path)
+  if(-not(Test-Path -LiteralPath $Path -PathType Leaf)){return $false}
+  $text=Read-WorkflowUtf8Text $Path
+  foreach($marker in $script:WorkflowLegacyRouterMarkers){if($text.IndexOf($marker,[StringComparison]::OrdinalIgnoreCase)-ge 0){return $true}}
+  return $false
+}
+
+function Get-WorkflowLegacyMigrationPlan {
+  param([Parameter(Mandatory)][string]$TargetRoot)
+  $TargetRoot=Resolve-WorkflowPath $TargetRoot
+  $migrated=New-Object System.Collections.Generic.List[string]
+  $removed=New-Object System.Collections.Generic.List[string]
+  $preserved=New-Object System.Collections.Generic.List[string]
+  $blocked=New-Object System.Collections.Generic.List[string]
+  $add={param($list,[string]$value)if($value -and -not $list.Contains($value)){$list.Add($value)}}
+  $addReparseBlock={param($item)if(($item.Attributes-band[IO.FileAttributes]::ReparsePoint)-ne 0){&$add $blocked (Get-WorkflowRepositoryRelativePath $TargetRoot $item.FullName);return $true};return $false}
+
+  $oldRoot=Join-Path $TargetRoot 'openspec'
+  $newRoot=Join-Path $TargetRoot '.workflow'
+  if(Test-Path -LiteralPath $oldRoot){
+    if(-not(Test-Path -LiteralPath $oldRoot -PathType Container)){&$add $blocked 'openspec'}
+    else{
+      $oldRootItem=Get-Item -LiteralPath $oldRoot -Force
+      if(-not(&$addReparseBlock $oldRootItem)){
+        $supported=@('changes','specs','design.md','config.project.yaml','config.workflow.yaml','config.yaml','schemas')
+        foreach($item in @(Get-ChildItem -LiteralPath $oldRoot -Force)){
+          if(&$addReparseBlock $item){continue}
+          if($item.Name -notin $supported){&$add $blocked (Get-WorkflowRepositoryRelativePath $TargetRoot $item.FullName)}
+          elseif($item.Name -in @('changes','specs','schemas')){if(-not $item.PSIsContainer){&$add $blocked (Get-WorkflowRepositoryRelativePath $TargetRoot $item.FullName)}}
+          elseif($item.PSIsContainer){&$add $blocked (Get-WorkflowRepositoryRelativePath $TargetRoot $item.FullName)}
+        }
+        foreach($name in @('changes','specs')){
+          $old=Join-Path $oldRoot $name;$new=Join-Path $newRoot $name
+          if(Test-Path -LiteralPath $old){
+            $oldItem=Get-Item -LiteralPath $old -Force
+            if(-not $oldItem.PSIsContainer){&$add $blocked (Get-WorkflowRepositoryRelativePath $TargetRoot $old)}
+            elseif(-not(&$addReparseBlock $oldItem)){
+              foreach($item in @(Get-ChildItem -LiteralPath $old -Force)){
+                if($item.Name -eq '.openspec.yaml'){continue}
+                if(&$addReparseBlock $item){continue}
+                $dest=Join-Path $new $item.Name
+                if(Test-Path -LiteralPath $dest){&$add $blocked (Get-WorkflowRepositoryRelativePath $TargetRoot $dest)}
+                else{&$add $migrated (Get-WorkflowRepositoryRelativePath $TargetRoot $dest)}
+              }
+            }
+          }
+        }
+        $oldDesign=Join-Path $oldRoot 'design.md';$newDesign=Join-Path $newRoot 'design.md'
+        if(Test-Path -LiteralPath $oldDesign){
+          $oldDesignItem=Get-Item -LiteralPath $oldDesign -Force
+          if($oldDesignItem.PSIsContainer -or (&$addReparseBlock $oldDesignItem)){&$add $blocked 'openspec/design.md'}
+          elseif(Test-Path -LiteralPath $newDesign){
+            if(-not(Test-Path -LiteralPath $newDesign -PathType Leaf) -or (Get-WorkflowPortableContentHash $oldDesign) -ne (Get-WorkflowPortableContentHash $newDesign)){&$add $blocked '.workflow/design.md'}
+            else{&$add $removed 'openspec/design.md';&$add $preserved '.workflow/design.md'}
+          }else{&$add $migrated '.workflow/design.md'}
+        }
+        foreach($name in @('config.project.yaml','config.workflow.yaml','config.yaml','schemas')){if(Test-Path -LiteralPath (Join-Path $oldRoot $name)){&$add $removed "openspec/$name"}}
+      }
+    }
+  }
+
+  foreach($changesRoot in @((Join-Path $oldRoot 'changes'),(Join-Path $newRoot 'changes'))){
+    if(Test-Path -LiteralPath $changesRoot){
+      $changesRootItem=Get-Item -LiteralPath $changesRoot -Force
+      if(-not $changesRootItem.PSIsContainer -or (&$addReparseBlock $changesRootItem)){&$add $blocked (Get-WorkflowRepositoryRelativePath $TargetRoot $changesRoot);continue}
+      foreach($item in @(Get-ChildItem -LiteralPath $changesRoot -Recurse -Force -ErrorAction Stop)){
+        if((&$addReparseBlock $item)){continue}
+        if(-not $item.PSIsContainer -and $item.Name -eq '.openspec.yaml'){&$add $removed (Get-WorkflowRepositoryRelativePath $TargetRoot $item.FullName)}
+      }
+    }
+  }
+
+  $oldSkill=Join-Path $TargetRoot '.agents/skills/openspec-workflow';if(Test-Path -LiteralPath $oldSkill){$item=Get-Item -LiteralPath $oldSkill -Force;if(-not $item.PSIsContainer -or (&$addReparseBlock $item)){&$add $blocked '.agents/skills/openspec-workflow'}else{&$add $removed '.agents/skills/openspec-workflow'}}
+  $cursorWorkflow=Join-Path $TargetRoot '.cursor/workflow'
+  if(Test-Path -LiteralPath $cursorWorkflow){$item=Get-Item -LiteralPath $cursorWorkflow -Force;if(-not $item.PSIsContainer -or (&$addReparseBlock $item)){&$add $blocked '.cursor/workflow'}else{&$add $removed '.cursor/workflow'}}
+  foreach($name in $script:WorkflowLegacyOpsxCommands){$rel=".cursor/commands/$name";$path=Join-Path $TargetRoot $rel;if(Test-Path -LiteralPath $path){$item=Get-Item -LiteralPath $path -Force;if(&$addReparseBlock $item){continue};if($item.PSIsContainer){&$add $blocked $rel}else{&$add $removed $rel}}}
+  $routerRel='.cursor/rules/workflow-router.mdc';$router=Join-Path $TargetRoot $routerRel
+  if(Test-Path -LiteralPath $router){$item=Get-Item -LiteralPath $router -Force;if(&$addReparseBlock $item){$null=$true}elseif($item.PSIsContainer){&$add $blocked $routerRel}elseif(Test-WorkflowLegacyRouter $router){&$add $removed $routerRel}else{&$add $preserved $routerRel}}
+  foreach($rel in @('.workflow/config.project.json','.workflow/rules.json','.workflow/mcp.json','AGENTS.md','.cursor/mcp.json')){if(Test-Path -LiteralPath (Join-Path $TargetRoot $rel)){&$add $preserved $rel}}
+
+  return [pscustomobject]@{
+    Migrated=@($migrated.ToArray()|Sort-Object -Unique)
+    Removed=@($removed.ToArray()|Sort-Object -Unique)
+    Preserved=@($preserved.ToArray()|Sort-Object -Unique)
+    Blocked=@($blocked.ToArray()|Sort-Object -Unique)
+  }
+}
+
+function Remove-WorkflowLegacyChangeMetadata {
+  param([Parameter(Mandatory)][string]$TargetRoot,[Parameter(Mandatory)][string]$ChangesRoot)
+  if(-not(Test-Path -LiteralPath $ChangesRoot -PathType Container)){return}
+  foreach($file in @(Get-ChildItem -LiteralPath $ChangesRoot -Recurse -Force -File -ErrorAction Stop|Where-Object{$_.Name -eq '.openspec.yaml'})){
+    $null=Get-WorkflowRepositoryRelativePath $TargetRoot $file.FullName
+    if(($file.Attributes-band[IO.FileAttributes]::ReparsePoint)-ne 0){throw "legacy metadata is a reparse point: $($file.FullName)"}
+    Remove-Item -LiteralPath $file.FullName -Force -ErrorAction Stop
+  }
+}
+
+function Remove-WorkflowLegacyCursorRuntime {
+  param([Parameter(Mandatory)][string]$TargetRoot)
+  $cursorWorkflow=Join-Path $TargetRoot '.cursor/workflow'
+  if(Test-Path -LiteralPath $cursorWorkflow){$item=Get-Item -LiteralPath $cursorWorkflow -Force;if(-not $item.PSIsContainer -or ($item.Attributes-band[IO.FileAttributes]::ReparsePoint)-ne 0){throw "invalid legacy Cursor namespace: $cursorWorkflow"};Remove-Item -LiteralPath $cursorWorkflow -Recurse -Force -ErrorAction Stop}
+  foreach($name in $script:WorkflowLegacyOpsxCommands){$path=Join-Path $TargetRoot ".cursor/commands/$name";if(Test-Path -LiteralPath $path){$item=Get-Item -LiteralPath $path -Force;if($item.PSIsContainer -or ($item.Attributes-band[IO.FileAttributes]::ReparsePoint)-ne 0){throw "invalid legacy Cursor command: $path"};Remove-Item -LiteralPath $path -Force -ErrorAction Stop}}
+  $router=Join-Path $TargetRoot '.cursor/rules/workflow-router.mdc';if(Test-WorkflowLegacyRouter $router){$item=Get-Item -LiteralPath $router -Force;if(($item.Attributes-band[IO.FileAttributes]::ReparsePoint)-ne 0){throw "legacy Cursor router is a reparse point: $router"};Remove-Item -LiteralPath $router -Force -ErrorAction Stop}
+}
+
+function Remove-WorkflowLegacyCodexRuntime {
+  param([Parameter(Mandatory)][string]$TargetRoot)
+  $oldSkill=Join-Path $TargetRoot '.agents/skills/openspec-workflow'
+  if(Test-Path -LiteralPath $oldSkill){
+    $item=Get-Item -LiteralPath $oldSkill -Force
+    if(-not $item.PSIsContainer -or ($item.Attributes-band[IO.FileAttributes]::ReparsePoint)-ne 0){throw "invalid legacy Codex skill: $oldSkill"}
+    Remove-Item -LiteralPath $oldSkill -Recurse -Force -ErrorAction Stop
+  }
+}
+
+function Get-WorkflowLegacyResidueErrors {
+  param([Parameter(Mandatory)][string]$ProjectRoot)
+  $errors=New-Object System.Collections.Generic.List[string]
+  foreach($rel in @('openspec','.agents/skills/openspec-workflow','.cursor/workflow')){if(Test-Path -LiteralPath (Join-Path $ProjectRoot $rel)){$errors.Add("superseded workflow path present: $rel")}}
+  $changes=Join-Path $ProjectRoot '.workflow/changes';if(Test-Path -LiteralPath $changes -PathType Container){foreach($file in @(Get-ChildItem -LiteralPath $changes -Recurse -Force -File -ErrorAction SilentlyContinue|Where-Object{$_.Name -eq '.openspec.yaml'})){$errors.Add("legacy workflow metadata present: $(Get-WorkflowRepositoryRelativePath $ProjectRoot $file.FullName)")}}
+  foreach($name in $script:WorkflowLegacyOpsxCommands){$rel=".cursor/commands/$name";if(Test-Path -LiteralPath (Join-Path $ProjectRoot $rel)){$errors.Add("superseded workflow path present: $rel")}}
+  $routerRel='.cursor/rules/workflow-router.mdc';$router=Join-Path $ProjectRoot $routerRel;if(Test-WorkflowLegacyRouter $router){$errors.Add("superseded workflow path present: $routerRel")}
+  return $errors.ToArray()
+}
+
 function Test-WorkflowMutationPreflight {
   param([Parameter(Mandatory)][string]$SourceRoot,[Parameter(Mandatory)][string]$TargetRoot,[string[]]$Clients=@('codex'),[switch]$FullInstall)
   $Clients=@(Resolve-WorkflowClients $Clients)
@@ -895,7 +1051,7 @@ function Test-WorkflowMutationPreflight {
   $targetSchema=Join-Path $TargetRoot ".workflow/schemas/$schemaName/schema.json";$sourceSchema=Join-Path $SourceRoot ".workflow/schemas/$schemaName/schema.json";$schemaPath=if($projectConfig -and $projectConfig.Schema){$targetSchema}else{$sourceSchema}
   if(-not(Test-Path -LiteralPath $schemaPath -PathType Leaf)){throw "selected workflow schema missing: $schemaName"};$null=Test-WorkflowSchemaDefinition -Path $schemaPath -ExpectedName $schemaName
   foreach($pair in @(@('.cursor/rules','.workflow-managed.json'),@('.agents/rules','.workflow-managed.json'))){$root=Join-Path $TargetRoot $pair[0];Test-WorkflowManagedIndex -Root $root -IndexPath (Join-Path $root $pair[1])}
-  $oldRoot=Join-Path $TargetRoot 'openspec';if(Test-Path -LiteralPath $oldRoot -PathType Container){foreach($name in @('changes','specs')){$old=Join-Path $oldRoot $name;$new=Join-Path $TargetRoot ".workflow/$name";if(Test-Path -LiteralPath $old -PathType Container){foreach($item in @(Get-ChildItem -LiteralPath $old -Force)){if(Test-Path -LiteralPath (Join-Path $new $item.Name)){throw "workflow migration collision: $(Join-Path $new $item.Name)"}}}}}
+  $plan=Get-WorkflowLegacyMigrationPlan $TargetRoot;if(@($plan.Blocked).Count){throw "workflow migration blocked: $(@($plan.Blocked)-join ', ')"}
 }
 
 function New-WorkflowTargetSnapshot {
@@ -948,21 +1104,33 @@ function Remove-WorkflowPublishedLegacyScripts {
 
 function Move-WorkflowLegacyProjectData {
   param([Parameter(Mandatory)][string]$TargetRoot)
-  $oldRoot=Join-Path $TargetRoot 'openspec';if(-not(Test-Path -LiteralPath $oldRoot -PathType Container)){return}
-  $newRoot=Join-Path $TargetRoot '.workflow';New-Item -ItemType Directory -Force -Path $newRoot|Out-Null
+  $oldRoot=Join-Path $TargetRoot 'openspec';$newRoot=Join-Path $TargetRoot '.workflow'
+  if(Test-Path -LiteralPath (Join-Path $newRoot 'changes') -PathType Container){Remove-WorkflowLegacyChangeMetadata -TargetRoot $TargetRoot -ChangesRoot (Join-Path $newRoot 'changes')}
+  if(-not(Test-Path -LiteralPath $oldRoot -PathType Container)){return}
+  New-Item -ItemType Directory -Force -Path $newRoot|Out-Null
+  $oldChanges=Join-Path $oldRoot 'changes';if(Test-Path -LiteralPath $oldChanges -PathType Container){Remove-WorkflowLegacyChangeMetadata -TargetRoot $TargetRoot -ChangesRoot $oldChanges}
+  $oldDesign=Join-Path $oldRoot 'design.md';$newDesign=Join-Path $newRoot 'design.md'
+  if(Test-Path -LiteralPath $oldDesign -PathType Leaf){
+    if(Test-Path -LiteralPath $newDesign){
+      if(-not(Test-Path -LiteralPath $newDesign -PathType Leaf) -or (Get-WorkflowPortableContentHash $oldDesign) -ne (Get-WorkflowPortableContentHash $newDesign)){throw "workflow migration blocked: .workflow/design.md"}
+      Remove-Item -LiteralPath $oldDesign -Force -ErrorAction Stop
+    }else{Move-Item -LiteralPath $oldDesign -Destination $newDesign -ErrorAction Stop}
+  }
   foreach($name in @('changes','specs')){
     $old=Join-Path $oldRoot $name;$new=Join-Path $newRoot $name
     if(Test-Path -LiteralPath $old -PathType Container){
       New-Item -ItemType Directory -Force -Path $new|Out-Null
       foreach($item in @(Get-ChildItem -LiteralPath $old -Force)){
-        $dest=Join-Path $new $item.Name;if(Test-Path -LiteralPath $dest){throw "workflow migration collision: $dest"};Move-Item -LiteralPath $item.FullName -Destination $dest
+        $dest=Join-Path $new $item.Name;if(Test-Path -LiteralPath $dest){throw "workflow migration collision: $dest"};Move-Item -LiteralPath $item.FullName -Destination $dest -ErrorAction Stop
       }
-      Remove-Item -LiteralPath $old -Force
+      Remove-Item -LiteralPath $old -Force -ErrorAction Stop
     }
   }
-  foreach($name in @('config.project.yaml','config.workflow.yaml','config.yaml')){$path=Join-Path $oldRoot $name;if(Test-Path -LiteralPath $path){Remove-Item -LiteralPath $path -Force}}
-  $schemas=Join-Path $oldRoot 'schemas';if(Test-Path -LiteralPath $schemas -PathType Container){Remove-Item -LiteralPath $schemas -Recurse -Force}
-  if(@(Get-ChildItem -LiteralPath $oldRoot -Force).Count -eq 0){Remove-Item -LiteralPath $oldRoot -Force}
+  foreach($name in @('config.project.yaml','config.workflow.yaml','config.yaml')){$path=Join-Path $oldRoot $name;if(Test-Path -LiteralPath $path){Remove-Item -LiteralPath $path -Force -ErrorAction Stop}}
+  $schemas=Join-Path $oldRoot 'schemas';if(Test-Path -LiteralPath $schemas -PathType Container){Remove-Item -LiteralPath $schemas -Recurse -Force -ErrorAction Stop}
+  $remaining=@(Get-ChildItem -LiteralPath $oldRoot -Force);if($remaining.Count){throw "unsupported legacy workflow content remains: $(@($remaining.Name)-join ', ')"}
+  Remove-Item -LiteralPath $oldRoot -Force -ErrorAction Stop
+  if(Test-Path -LiteralPath (Join-Path $newRoot 'changes') -PathType Container){Remove-WorkflowLegacyChangeMetadata -TargetRoot $TargetRoot -ChangesRoot (Join-Path $newRoot 'changes')}
 }
 
 function Publish-WorkflowCodexArtifact {
@@ -974,12 +1142,15 @@ function Publish-WorkflowCodexArtifact {
   $targetExisted=Test-Path -LiteralPath $TargetRoot
   if($targetExisted -and -not(Test-Path -LiteralPath $TargetRoot -PathType Container)){throw "Target root is not a directory: $TargetRoot"}
   Test-WorkflowMutationPreflight -SourceRoot $SourceRoot -TargetRoot $TargetRoot -Clients codex
+  $report=Get-WorkflowLegacyMigrationPlan $TargetRoot
   $targetCreated=$false
-  $snapshot=New-WorkflowTargetSnapshot -TargetRoot $TargetRoot -RelativePaths @('.workflow','openspec','AGENTS.md','.agents/skills/workflow','.agents/skills/openspec-workflow','.agents/rules','.codex/config.toml','scripts/init.ps1','scripts/doctor.ps1','scripts/lib/WorkflowDeploy.psm1')
+  $snapshotPaths=@('.workflow','openspec','AGENTS.md','.agents/skills/workflow','.agents/skills/openspec-workflow','.agents/rules','.codex/config.toml','scripts/init.ps1','scripts/doctor.ps1','scripts/lib/WorkflowDeploy.psm1','.cursor/workflow','.cursor/rules/workflow-router.mdc')+@($script:WorkflowLegacyOpsxCommands|ForEach-Object{".cursor/commands/$_"})
+  $snapshot=New-WorkflowTargetSnapshot -TargetRoot $TargetRoot -RelativePaths $snapshotPaths
   try{
     if(-not $targetExisted){New-Item -ItemType Directory -Force -Path $TargetRoot -ErrorAction Stop|Out-Null;$targetCreated=$true}
-    $sourceSkill=Join-Path $SourceRoot '.agents/skills/workflow';Move-WorkflowLegacyProjectData $TargetRoot
-    $oldSkill=Join-Path $TargetRoot '.agents/skills/openspec-workflow';if(Test-Path -LiteralPath $oldSkill){Remove-Item -LiteralPath $oldSkill -Recurse -Force}
+    $sourceSkill=Join-Path $SourceRoot '.agents/skills/workflow';Move-WorkflowLegacyProjectData $TargetRoot;Remove-WorkflowLegacyCursorRuntime $TargetRoot
+    if($env:WORKFLOW_DEPLOY_TEST_FAILPOINT -eq 'after-legacy-cleanup'){throw 'workflow publication test failpoint: after-legacy-cleanup'}
+    Remove-WorkflowLegacyCodexRuntime $TargetRoot
     Copy-WorkflowTree $sourceSkill (Join-Path $TargetRoot '.agents/skills/workflow')
     Install-WorkflowSelectedSchema -SourceRoot $SourceRoot -TargetRoot $TargetRoot
     Install-WorkflowConfigs -SourceRoot $SourceRoot -TargetRoot $TargetRoot
@@ -994,6 +1165,7 @@ function Publish-WorkflowCodexArtifact {
     foreach($sourceOnly in @('.workflow/pack','.workflow/cli','.workflow/version.json','.workflow/manifest.json')){$path=Join-Path $TargetRoot $sourceOnly;if(Test-Path -LiteralPath $path){Remove-Item -LiteralPath $path -Recurse -Force}}
     Remove-WorkflowPublishedLegacyScripts $TargetRoot
   }catch{$original=$_.Exception;try{Restore-WorkflowTargetSnapshot $snapshot;if($targetCreated){Remove-WorkflowCreatedTarget $TargetRoot}}catch{throw "workflow publication failed: $($original.Message); rollback failed: $($_.Exception.Message)"};throw $original}finally{Remove-WorkflowTargetSnapshot $snapshot}
+  return $report
 }
 
 function Invoke-WorkflowArtifactDoctor {
@@ -1004,7 +1176,7 @@ function Invoke-WorkflowArtifactDoctor {
   $ProjectRoot=Resolve-WorkflowPath $ProjectRoot
   $errors=New-Object System.Collections.Generic.List[string]
   foreach($sourceOnly in @('.workflow/pack','.workflow/cli')){if(Test-Path -LiteralPath (Join-Path $ProjectRoot $sourceOnly)){$errors.Add("downstream source layout present: $sourceOnly")}}
-  foreach($old in @('.agents/skills/openspec-workflow','openspec')){if(Test-Path -LiteralPath (Join-Path $ProjectRoot $old)){$errors.Add("superseded workflow path present: $old")}}
+  foreach($e in @(Get-WorkflowLegacyResidueErrors $ProjectRoot)){$errors.Add($e)}
   $skill=Join-Path $ProjectRoot '.agents/skills/workflow'
   try{Test-WorkflowCodexArtifact $skill}catch{$errors.Add($_.Exception.Message)}
   try{

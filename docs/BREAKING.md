@@ -1,4 +1,4 @@
-# 6.0 升级边界
+# 6.2 升级边界
 
 `scripts/init.ps1 -Yes` 会替换目标项目中 workflow-owned 的旧运行时，不提供旧命令或旧目录兼容层。
 
@@ -8,7 +8,9 @@
 - 生成 `/workflow:*` Cursor 入口与 Codex managed guidance。
 - 安装 `.workflow/schemas/workflow-contract/` 和 workflow 默认配置。
 - 保留 `.workflow/config.project.json`，重建 `.workflow/config.json`。
-- 将旧生命周期目录中的 changes、specs 迁入 `.workflow` 后删除旧运行时命名空间。
+- 将旧生命周期目录中的 changes、specs 和根 design 迁入 `.workflow`，删除 change 树内废弃的 `.openspec.yaml`，再删除旧运行时命名空间。
+- 标准 Codex 发布删除精确的旧 `.cursor/workflow`、固定 `opsx-*` 命令和含旧标记的 router；当前与私有 Cursor 内容不变。
+- `deploy.ps1 -Json` 输出排序后的迁移报告、artifact 版本和 Doctor 结果。
 - 更新标记过的 AGENTS 与 Codex TOML managed block。
 - 删除 workflow-owned 的旧方法 gates 和旧部署脚本。
 
@@ -16,6 +18,7 @@
 
 - 不删除项目 changes、业务 specs 或私有配置。
 - 不删除无关 skills、rules、commands。
+- 不根据宽泛名称前缀删除私有 Cursor 内容，也不删除当前 `/workflow:*` 适配器。
 - 不修改 managed block 之外的 `AGENTS.md` 与 `.codex/config.toml` 内容。
 - 不安装、下载或调用外部生命周期 CLI/package。
 - 不向下游复制源码专用 `.workflow/pack` 或 `.workflow/cli`。

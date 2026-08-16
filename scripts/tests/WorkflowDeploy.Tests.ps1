@@ -305,12 +305,17 @@ try {
   Assert-Throws { Install-Workflow -SourceRoot $repoRoot -TargetRoot $rollbackTarget } 'scripts|container|directory|exists' "install reports a mutation failure after preflight"
   Assert-True ((Get-TreeFingerprint $rollbackTarget) -eq $rollbackBefore) "install rollback restores the original target tree"
 
-  # Codex-only deployment must treat the entire Cursor tree as out of scope.
+  # Codex-only deployment must preserve Cursor-private and current runtime content.
   $codexOnly = Join-Path $tmp 'codex-only'
   New-Item -ItemType Directory -Force -Path (Join-Path $codexOnly '.cursor\skills\openspec-private') | Out-Null
-  New-Item -ItemType Directory -Force -Path (Join-Path $codexOnly '.cursor\rules') | Out-Null
+  New-Item -ItemType Directory -Force -Path (Join-Path $codexOnly '.cursor\rules'),(Join-Path $codexOnly '.cursor\commands') | Out-Null
+  New-Item -ItemType Directory -Force -Path (Join-Path $codexOnly '.agents\skills\openspec-workflow'),(Join-Path $codexOnly '.agents\skills\private-skill') | Out-Null
   [IO.File]::WriteAllBytes((Join-Path $codexOnly '.cursor\skills\openspec-private\SKILL.md'), [byte[]](0,1,2,13,10,255))
   Set-Content -Encoding utf8 (Join-Path $codexOnly '.cursor\rules\project-only.mdc') 'project-owned cursor rule'
+  Set-Content -Encoding utf8 (Join-Path $codexOnly '.cursor\rules\workflow-router.mdc') 'current private router for /workflow:* only'
+  Set-Content -Encoding utf8 (Join-Path $codexOnly '.cursor\commands\workflow-apply.md') 'current project adapter'
+  Set-Content -Encoding utf8 (Join-Path $codexOnly '.agents\skills\openspec-workflow\SKILL.md') 'legacy Codex runtime'
+  Set-Content -Encoding utf8 (Join-Path $codexOnly '.agents\skills\private-skill\SKILL.md') 'private Codex runtime'
   $cursorFingerprint = {
     $root = Join-Path $codexOnly '.cursor'
     return (@(Get-ChildItem -LiteralPath $root -Recurse -File | Sort-Object FullName | ForEach-Object {
@@ -320,9 +325,10 @@ try {
   $cursorBefore = &$cursorFingerprint
   Install-Workflow -SourceRoot $repoRoot -TargetRoot $codexOnly -Clients codex
   $cursorAfter = &$cursorFingerprint
-  Assert-True ($cursorAfter -eq $cursorBefore) "Codex-only install leaves Cursor tree byte-for-byte unchanged"
+  Assert-True ($cursorAfter -eq $cursorBefore) "Codex-only install preserves current and private Cursor content byte-for-byte"
   Assert-True (Test-Path (Join-Path $codexOnly '.agents\skills\workflow\SKILL.md')) "Codex-only install creates Codex skill"
-  Assert-True (-not (Test-Path (Join-Path $codexOnly '.cursor\commands\workflow-apply.md'))) "Codex-only install does not create Cursor commands"
+  Assert-True (-not(Test-Path (Join-Path $codexOnly '.agents\skills\openspec-workflow')) -and (Get-Content -Raw (Join-Path $codexOnly '.agents\skills\private-skill\SKILL.md')) -match 'private Codex runtime') "Codex-only install removes only the exact legacy Codex skill"
+  Assert-True ((Get-Content -Raw (Join-Path $codexOnly '.cursor\commands\workflow-apply.md')) -match 'current project adapter') "Codex-only install does not replace current Cursor commands"
   $codexMetadata = Get-Content -Raw (Join-Path $codexOnly '.workflow\version.json') | ConvertFrom-Json
   Assert-True ((@($codexMetadata.clients) -join ',') -eq 'codex') "Codex-only metadata records only Codex"
   Assert-True ((Invoke-WorkflowDoctor -ProjectRoot $codexOnly).ExitCode -eq 0) "Codex-only doctor ignores Cursor-private content"
@@ -338,6 +344,115 @@ try {
   Assert-Throws { Publish-WorkflowCodexArtifact -SourceRoot $repoRoot -TargetRoot $publishRollback } '\.codex|container|directory|exists' "publication reports a mutation failure after preflight"
   Assert-True ((Get-TreeFingerprint $publishRollback) -eq $publishRollbackBefore) "publication rollback restores the original target tree"
 
+  # A failure immediately after legacy cleanup restores project data and every bounded Cursor candidate.
+  $cleanupRollback=Join-Path $tmp 'cleanup-rollback'
+  New-Item -ItemType Directory -Force -Path (Join-Path $cleanupRollback 'openspec\changes\live'),(Join-Path $cleanupRollback '.workflow\changes\existing'),(Join-Path $cleanupRollback '.cursor\workflow\pack'),(Join-Path $cleanupRollback '.cursor\commands'),(Join-Path $cleanupRollback '.cursor\rules')|Out-Null
+  Set-Content -Encoding utf8 (Join-Path $cleanupRollback 'openspec\design.md') 'legacy root design'
+  Set-Content -Encoding utf8 (Join-Path $cleanupRollback 'openspec\changes\live\notes.md') 'active business notes'
+  Set-Content -Encoding utf8 (Join-Path $cleanupRollback 'openspec\changes\live\.openspec.yaml') 'obsolete metadata'
+  Set-Content -Encoding utf8 (Join-Path $cleanupRollback '.workflow\changes\existing\.openspec.yaml') 'obsolete current metadata'
+  Set-Content -Encoding utf8 (Join-Path $cleanupRollback '.cursor\workflow\pack\apply.md') 'old cursor pack'
+  Set-Content -Encoding utf8 (Join-Path $cleanupRollback '.cursor\commands\opsx-apply.md') 'old opsx adapter'
+  Set-Content -Encoding utf8 (Join-Path $cleanupRollback '.cursor\rules\workflow-router.mdc') 'route /opsx:apply through OpenSpec workflow'
+  $cleanupRollbackBefore=Get-TreeFingerprint $cleanupRollback
+  try{
+    $env:WORKFLOW_DEPLOY_TEST_FAILPOINT='after-legacy-cleanup'
+    Assert-Throws { Publish-WorkflowCodexArtifact -SourceRoot $repoRoot -TargetRoot $cleanupRollback } 'after-legacy-cleanup' "publication failpoint runs after legacy cleanup"
+  }finally{Remove-Item Env:WORKFLOW_DEPLOY_TEST_FAILPOINT -ErrorAction SilentlyContinue}
+  Assert-True ((Get-TreeFingerprint $cleanupRollback) -eq $cleanupRollbackBefore) "publication rollback restores legacy project data and Cursor candidates byte-for-byte"
+
+  # Root-design collisions are rejected before any target write.
+  $designCollision=Join-Path $tmp 'design-collision'
+  New-Item -ItemType Directory -Force -Path (Join-Path $designCollision 'openspec'),(Join-Path $designCollision '.workflow')|Out-Null
+  Set-Content -Encoding utf8 (Join-Path $designCollision 'openspec\design.md') 'legacy design'
+  Set-Content -Encoding utf8 (Join-Path $designCollision '.workflow\design.md') 'different current design'
+  Set-Content -Encoding utf8 (Join-Path $designCollision 'private.txt') 'must remain'
+  $designCollisionBefore=Get-TreeFingerprint $designCollision
+  Assert-Throws { Publish-WorkflowCodexArtifact -SourceRoot $repoRoot -TargetRoot $designCollision } 'migration blocked.*\.workflow/design\.md' "conflicting root designs fail preflight"
+  Assert-True ((Get-TreeFingerprint $designCollision) -eq $designCollisionBefore) "root-design conflict leaves target byte-for-byte unchanged"
+
+  $invalidCleanup=Join-Path $tmp 'invalid-cleanup-shape';New-Item -ItemType Directory -Force -Path (Join-Path $invalidCleanup 'openspec'),(Join-Path $invalidCleanup '.cursor')|Out-Null
+  Set-Content -Encoding utf8 (Join-Path $invalidCleanup 'openspec\schemas') 'not a schema directory'
+  Set-Content -Encoding utf8 (Join-Path $invalidCleanup '.cursor\workflow') 'not a workflow namespace directory'
+  $invalidCleanupBefore=Get-TreeFingerprint $invalidCleanup
+  Assert-Throws { Publish-WorkflowCodexArtifact -SourceRoot $repoRoot -TargetRoot $invalidCleanup } 'migration blocked.*\.cursor/workflow.*openspec/schemas' "invalid legacy cleanup shapes fail preflight"
+  Assert-True ((Get-TreeFingerprint $invalidCleanup) -eq $invalidCleanupBefore) "invalid cleanup shape leaves target byte-for-byte unchanged"
+
+  # A realistic old installation converges in one standard Codex publication.
+  $legacyPublished=Join-Path $tmp 'legacy-published'
+  New-Item -ItemType Directory -Force -Path @(
+    (Join-Path $legacyPublished 'openspec\changes\active-order'),
+    (Join-Path $legacyPublished 'openspec\changes\archive\2026-01-01-old-order'),
+    (Join-Path $legacyPublished 'openspec\specs\legacy-cap'),
+    (Join-Path $legacyPublished '.workflow\changes\current-change'),
+    (Join-Path $legacyPublished '.workflow\rules'),
+    (Join-Path $legacyPublished '.agents\skills\openspec-workflow'),
+    (Join-Path $legacyPublished '.agents\skills\private-skill'),
+    (Join-Path $legacyPublished '.cursor\workflow\pack'),
+    (Join-Path $legacyPublished '.cursor\commands'),
+    (Join-Path $legacyPublished '.cursor\rules'),
+    (Join-Path $legacyPublished '.cursor\skills\workflow-private')
+  )|Out-Null
+  $legacyDesign="# Legacy project design`n`nPreserve the root design.`n"
+  Set-Content -Encoding utf8 (Join-Path $legacyPublished 'openspec\design.md') $legacyDesign
+  $legacyDesignOnDisk=Get-Content -Raw (Join-Path $legacyPublished 'openspec\design.md')
+  Set-Content -Encoding utf8 (Join-Path $legacyPublished 'openspec\changes\active-order\notes.md') 'active project notes'
+  Set-Content -Encoding utf8 (Join-Path $legacyPublished 'openspec\changes\active-order\.openspec.yaml') 'obsolete active metadata'
+  Set-Content -Encoding utf8 (Join-Path $legacyPublished 'openspec\changes\archive\2026-01-01-old-order\notes.md') 'archived project notes'
+  Set-Content -Encoding utf8 (Join-Path $legacyPublished 'openspec\changes\archive\2026-01-01-old-order\.openspec.yaml') 'obsolete archive metadata'
+  Set-Content -Encoding utf8 (Join-Path $legacyPublished '.workflow\changes\current-change\.openspec.yaml') 'obsolete current metadata'
+  Set-Content -Encoding utf8 (Join-Path $legacyPublished 'openspec\specs\legacy-cap\spec.md') "# legacy-cap Specification`n`n## Purpose`n`nPreserve legacy capability.`n`n### Requirement: Legacy behavior`nThe project SHALL preserve legacy behavior.`n`n#### Scenario: Upgrade`n- **WHEN** workflow is published`n- **THEN** legacy behavior remains specified`n"
+  Set-Content -Encoding utf8 (Join-Path $legacyPublished 'openspec\specs\legacy-cap\design.md') "# legacy-cap Design`n`n## Context`nPreserved accepted design.`n"
+  Set-Content -Encoding utf8 (Join-Path $legacyPublished '.workflow\rules\project.md') "# Project rule`n`nKeep project-owned guidance.`n"
+  Set-Content -Encoding utf8 (Join-Path $legacyPublished '.workflow\rules.json') '{"schemaVersion":1,"rules":[{"path":"project.md","description":"Project rule","always":true,"paths":[]}]}'
+  Set-Content -Encoding utf8 (Join-Path $legacyPublished '.workflow\mcp.json') '{"schemaVersion":1,"servers":{}}'
+  Set-Content -Encoding utf8 (Join-Path $legacyPublished '.agents\skills\openspec-workflow\SKILL.md') 'old Codex runtime'
+  Set-Content -Encoding utf8 (Join-Path $legacyPublished '.agents\skills\private-skill\SKILL.md') 'private Codex skill'
+  Set-Content -Encoding utf8 (Join-Path $legacyPublished '.cursor\workflow\pack\apply.md') 'old Cursor pack'
+  Set-Content -Encoding utf8 (Join-Path $legacyPublished '.cursor\commands\opsx-apply.md') 'old opsx adapter'
+  Set-Content -Encoding utf8 (Join-Path $legacyPublished '.cursor\commands\workflow-apply.md') 'current workflow adapter'
+  Set-Content -Encoding utf8 (Join-Path $legacyPublished '.cursor\commands\private-command.md') 'private command'
+  Set-Content -Encoding utf8 (Join-Path $legacyPublished '.cursor\rules\workflow-router.mdc') 'route /opsx:apply through $openspec-workflow'
+  Set-Content -Encoding utf8 (Join-Path $legacyPublished '.cursor\rules\private.mdc') 'private Cursor rule'
+  Set-Content -Encoding utf8 (Join-Path $legacyPublished '.cursor\skills\workflow-private\SKILL.md') 'private Cursor skill'
+  Set-Content -Encoding utf8 (Join-Path $legacyPublished '.cursor\mcp.json') '{"mcpServers":{"private":{}}}'
+  Set-Content -Encoding utf8 (Join-Path $legacyPublished 'AGENTS.md') "# Project guidance`n`nKeep this text outside managed blocks.`n"
+  $legacyReport=Publish-WorkflowCodexArtifact -SourceRoot $repoRoot -TargetRoot $legacyPublished
+  Assert-True (@($legacyReport.Migrated) -contains '.workflow/design.md') "migration report includes the root design"
+  Assert-True (@($legacyReport.Migrated) -contains '.workflow/changes/active-order' -and @($legacyReport.Migrated) -contains '.workflow/specs/legacy-cap') "migration report includes project change and spec data"
+  Assert-True (@($legacyReport.Removed) -contains 'openspec/changes/active-order/.openspec.yaml' -and @($legacyReport.Removed) -contains '.workflow/changes/current-change/.openspec.yaml') "migration report includes old and current change metadata"
+  Assert-True (@($legacyReport.Removed) -contains '.cursor/workflow' -and @($legacyReport.Removed) -contains '.cursor/commands/opsx-apply.md' -and @($legacyReport.Removed) -contains '.cursor/rules/workflow-router.mdc') "migration report includes exact legacy Cursor assets"
+  Assert-True ((@($legacyReport.Migrated)-join "`n") -eq (@($legacyReport.Migrated|Sort-Object -Unique)-join "`n") -and (@($legacyReport.Removed)-join "`n") -eq (@($legacyReport.Removed|Sort-Object -Unique)-join "`n")) "migration report action arrays are sorted and unique"
+  Assert-True ((Get-Content -Raw (Join-Path $legacyPublished '.workflow\design.md')) -eq $legacyDesignOnDisk) "publication preserves the root design content byte-for-byte"
+  Assert-True ((Test-Path (Join-Path $legacyPublished '.workflow\changes\active-order\notes.md')) -and (Test-Path (Join-Path $legacyPublished '.workflow\changes\archive\2026-01-01-old-order\notes.md'))) "publication preserves active and archived project data"
+  Assert-True (@(Get-ChildItem -LiteralPath (Join-Path $legacyPublished '.workflow\changes') -Recurse -Force -File|Where-Object{$_.Name -eq '.openspec.yaml'}).Count -eq 0) "publication removes legacy metadata from all change trees"
+  Assert-True (-not(Test-Path (Join-Path $legacyPublished 'openspec')) -and -not(Test-Path (Join-Path $legacyPublished '.agents\skills\openspec-workflow')) -and -not(Test-Path (Join-Path $legacyPublished '.cursor\workflow'))) "publication removes superseded workflow namespaces"
+  Assert-True (-not(Test-Path (Join-Path $legacyPublished '.cursor\commands\opsx-apply.md')) -and -not(Test-Path (Join-Path $legacyPublished '.cursor\rules\workflow-router.mdc'))) "publication removes old Cursor adapters"
+  Assert-True ((Get-Content -Raw (Join-Path $legacyPublished '.cursor\commands\workflow-apply.md')) -match 'current workflow adapter' -and (Get-Content -Raw (Join-Path $legacyPublished '.cursor\commands\private-command.md')) -match 'private command') "publication preserves current and private Cursor commands"
+  Assert-True ((Test-Path (Join-Path $legacyPublished '.cursor\rules\private.mdc')) -and (Test-Path (Join-Path $legacyPublished '.cursor\skills\workflow-private\SKILL.md')) -and (Test-Path (Join-Path $legacyPublished '.cursor\mcp.json'))) "publication preserves unrelated Cursor rules, skills, and MCP"
+  Assert-True ((Get-Content -Raw (Join-Path $legacyPublished 'AGENTS.md')) -match 'Keep this text outside managed blocks') "publication preserves project AGENTS content"
+  $legacyLocalCli=Join-Path $legacyPublished '.agents\skills\workflow\bin\workflow.ps1'
+  $legacyLocalDoctor=((& $legacyLocalCli doctor --json -ProjectRoot $legacyPublished)|Out-String|ConvertFrom-Json)
+  Assert-True ($legacyLocalDoctor.valid -eq $true -and (Invoke-WorkflowArtifactDoctor -ProjectRoot $legacyPublished -SourceRoot $repoRoot).ExitCode -eq 0) "local and Artifact Doctor accept the converged installation"
+  $legacyConverged=Get-TreeFingerprint $legacyPublished
+  $legacySecondReport=Publish-WorkflowCodexArtifact -SourceRoot $repoRoot -TargetRoot $legacyPublished
+  Assert-True ((Get-TreeFingerprint $legacyPublished) -eq $legacyConverged) "second publication is filesystem-idempotent"
+  Assert-True (@($legacySecondReport.Migrated).Count -eq 0 -and @($legacySecondReport.Removed).Count -eq 0) "second publication reports no completed legacy action again"
+
+  # Both Doctors report exact residue and remain read-only.
+  $doctorResidue=Join-Path $legacyPublished '.workflow\changes\doctor-residue\.openspec.yaml';New-Item -ItemType Directory -Force -Path (Split-Path -Parent $doctorResidue)|Out-Null;Set-Content -Encoding utf8 $doctorResidue 'obsolete'
+  $residueBefore=Get-TreeFingerprint $legacyPublished
+  $residueLocal=((& $legacyLocalCli doctor --json -ProjectRoot $legacyPublished)|Out-String|ConvertFrom-Json)
+  $residueArtifact=Invoke-WorkflowArtifactDoctor -ProjectRoot $legacyPublished -SourceRoot $repoRoot
+  Assert-True ($residueLocal.valid -eq $false -and (($residueLocal.errors -join "`n") -match '\.workflow/changes/doctor-residue/\.openspec\.yaml')) "published local Doctor reports the exact legacy metadata path"
+  Assert-True ($residueArtifact.ExitCode -ne 0 -and (($residueArtifact.Errors -join "`n") -match '\.workflow/changes/doctor-residue/\.openspec\.yaml')) "Artifact Doctor reports the exact legacy metadata path"
+  Assert-True ((Get-TreeFingerprint $legacyPublished) -eq $residueBefore) "legacy residue diagnosis is read-only"
+  Remove-Item -LiteralPath (Split-Path -Parent $doctorResidue) -Recurse -Force
+
+  $deployJsonRaw=(& pwsh -NoProfile -File (Join-Path $repoRoot 'scripts\deploy.ps1') -Source $repoRoot -Target $legacyPublished -Yes -Json)|Out-String
+  $deployJson=$deployJsonRaw|ConvertFrom-Json
+  Assert-True ($deployJson.version -eq '6.2.0' -and $deployJson.doctorValid -eq $true -and @($deployJson.migrated).Count -eq 0 -and @($deployJson.removed).Count -eq 0) "deploy JSON reports artifact version, idempotent actions, and Doctor validity"
+
   $customSource=Join-Path $tmp 'custom-source';$customSourceSkill=Join-Path $customSource '.agents\skills';$customSourceSchema=Join-Path $customSource '.workflow\schemas\portable-flow\templates'
   New-Item -ItemType Directory -Force -Path $customSourceSkill,$customSourceSchema|Out-Null
   Copy-Item -LiteralPath (Join-Path $repoRoot '.agents\skills\workflow') -Destination (Join-Path $customSourceSkill 'workflow') -Recurse -Force
@@ -345,7 +460,7 @@ try {
   Set-Content -Encoding utf8 (Join-Path $customSource '.workflow\schemas\portable-flow\schema.json') '{"name":"portable-flow","version":1,"artifacts":[{"id":"brief","kind":"document","path":"brief.md","required":true,"requires":[],"template":"templates/brief.md","instruction":"Write the brief."}]}'
   Set-Content -Encoding utf8 (Join-Path $customSourceSchema 'brief.md') "# Brief`n"
   $customPublished=Join-Path $tmp 'custom-source-published'
-  Publish-WorkflowCodexArtifact -SourceRoot $customSource -TargetRoot $customPublished
+  Publish-WorkflowCodexArtifact -SourceRoot $customSource -TargetRoot $customPublished|Out-Null
   Assert-True (Test-Path (Join-Path $customPublished '.workflow\schemas\portable-flow\schema.json')) "publication copies the workflow-selected custom schema"
   Assert-True (-not(Test-Path (Join-Path $customPublished '.workflow\schemas\workflow-contract'))) "publication does not require a hard-coded workflow-contract schema"
   Assert-True (((Get-Content -Raw (Join-Path $customPublished '.workflow\config.json')|ConvertFrom-Json).schema) -eq 'portable-flow') "publication records the workflow-selected custom schema"
@@ -365,7 +480,7 @@ try {
   Set-Content -Encoding utf8 (Join-Path $published 'scripts\init.ps1') 'project wrapper calls Install-Workflow but is not the Workflow deployment source'
   Set-Content -Encoding utf8 (Join-Path $published 'scripts\doctor.ps1') 'Validate a platform-neutral Workflow install; Invoke-WorkflowDoctor'
   Set-Content -Encoding utf8 (Join-Path $published 'scripts\lib\WorkflowDeploy.psm1') 'WorkflowDeploy.psm1 WorkflowVersion Install-Workflow'
-  Publish-WorkflowCodexArtifact -SourceRoot $repoRoot -TargetRoot $published
+  Publish-WorkflowCodexArtifact -SourceRoot $repoRoot -TargetRoot $published|Out-Null
   Assert-True (Test-Path (Join-Path $published '.workflow')) "publication preserves downstream workflow project data"
   Assert-True (-not(Test-Path (Join-Path $published '.workflow\pack'))) "publication removes source-only workflow pack"
   Assert-True (-not(Test-Path (Join-Path $published '.workflow\cli'))) "publication removes source-only CLI source"
@@ -387,7 +502,7 @@ try {
   $publishedCli=Join-Path $published '.agents\skills\workflow\bin\workflow.ps1'
   Assert-True (Test-Path $publishedCli) "publication includes repository-owned CLI"
   $publishedRuntimeText=@(Get-ChildItem -LiteralPath (Join-Path $published '.agents\skills\workflow') -Recurse -File | ForEach-Object { Get-Content -LiteralPath $_.FullName -Raw }) -join "`n"
-  Assert-True ($publishedRuntimeText -notmatch '(?i)openspec|opsx|\bnpm\b|\bnpx\b') "published runtime contains no external lifecycle identity or package command"
+  Assert-True ($publishedRuntimeText -notmatch '(?im)^\s*(?:&\s*)?(?:npm|npx|openspec)(?:\.cmd|\.ps1|\.exe)?\s+(?:install|exec|status|archive|sync|validate|instructions)\b') "published runtime contains no external lifecycle package invocation"
   Assert-True ($publishedRuntimeText -match '(?i)never install, download, discover, or invoke an external lifecycle CLI or package') "published runtime explicitly rejects external lifecycle dependencies"
 
   # The published lifecycle works without npm, npx, or any external lifecycle CLI on PATH.
