@@ -1,6 +1,6 @@
 # WorkflowDeploy.psm1 — platform-neutral workflow deployment
 
-$script:WorkflowVersion = '6.2.0'
+$script:WorkflowVersion = '6.2.1'
 $script:WorkflowAgentsStart = '<!-- BEGIN WORKFLOW MANAGED -->'
 $script:WorkflowAgentsEnd = '<!-- END WORKFLOW MANAGED -->'
 $script:WorkflowCodexConfigStart = '# BEGIN WORKFLOW MANAGED MCP'
@@ -234,6 +234,7 @@ function ConvertTo-WorkflowCanonicalJson {
 
 function Get-WorkflowAgentsBlock {
   param([object[]]$RuleEntries = @())
+  $effectiveRules=@($RuleEntries|Where-Object{$null -ne $_})
   $lines = New-Object System.Collections.Generic.List[string]
   [void]$lines.Add($script:WorkflowAgentsStart)
   [void]$lines.Add('## Workflow')
@@ -246,11 +247,11 @@ function Get-WorkflowAgentsBlock {
   [void]$lines.Add('- Use `.agents/skills/workflow/bin/workflow.ps1` for lifecycle state and validation. Repository files are authoritative.')
   [void]$lines.Add('- Never install, download, discover, or invoke an external lifecycle CLI or package. A missing local CLI is an invalid workflow installation.')
   [void]$lines.Add('- Preserve unrelated user changes. Do not merge, push, open a PR, discard a branch, or archive without the authorization required by the workflow.')
-  if (@($RuleEntries).Count -gt 0) {
+  if ($effectiveRules.Count -gt 0) {
     [void]$lines.Add('')
     [void]$lines.Add('### Project rules')
     [void]$lines.Add('')
-    foreach ($entry in $RuleEntries) {
+    foreach ($entry in $effectiveRules) {
       $desc = if ($entry.Description) { ' - ' + $entry.Description } else { '' }
       if ($entry.Always) {
         [void]$lines.Add('- Read `.agents/rules/' + $entry.Name + '` before any work (always apply)' + $desc + '.')

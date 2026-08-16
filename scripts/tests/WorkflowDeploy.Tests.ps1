@@ -451,7 +451,7 @@ try {
 
   $deployJsonRaw=(& pwsh -NoProfile -File (Join-Path $repoRoot 'scripts\deploy.ps1') -Source $repoRoot -Target $legacyPublished -Yes -Json)|Out-String
   $deployJson=$deployJsonRaw|ConvertFrom-Json
-  Assert-True ($deployJson.version -eq '6.2.0' -and $deployJson.doctorValid -eq $true -and @($deployJson.migrated).Count -eq 0 -and @($deployJson.removed).Count -eq 0) "deploy JSON reports artifact version, idempotent actions, and Doctor validity"
+  Assert-True ($deployJson.version -eq '6.2.1' -and $deployJson.doctorValid -eq $true -and @($deployJson.migrated).Count -eq 0 -and @($deployJson.removed).Count -eq 0) "deploy JSON reports artifact version, idempotent actions, and Doctor validity"
 
   $customSource=Join-Path $tmp 'custom-source';$customSourceSkill=Join-Path $customSource '.agents\skills';$customSourceSchema=Join-Path $customSource '.workflow\schemas\portable-flow\templates'
   New-Item -ItemType Directory -Force -Path $customSourceSkill,$customSourceSchema|Out-Null
@@ -464,6 +464,7 @@ try {
   Assert-True (Test-Path (Join-Path $customPublished '.workflow\schemas\portable-flow\schema.json')) "publication copies the workflow-selected custom schema"
   Assert-True (-not(Test-Path (Join-Path $customPublished '.workflow\schemas\workflow-contract'))) "publication does not require a hard-coded workflow-contract schema"
   Assert-True (((Get-Content -Raw (Join-Path $customPublished '.workflow\config.json')|ConvertFrom-Json).schema) -eq 'portable-flow') "publication records the workflow-selected custom schema"
+  Assert-True ((Get-Content -Raw (Join-Path $customPublished 'AGENTS.md')) -notmatch '### Project rules') "publication omits the project-rules section when no project rules exist"
 
   $published = Join-Path $tmp 'published-artifact'
   New-Item -ItemType Directory -Force -Path (Join-Path $published '.agents\rules') | Out-Null
